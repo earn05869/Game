@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="30" height="20" tilewidth="64" tileheight="64" infinite="0" nextlayerid="6" nextobjectid="15">
+ <tileset firstgid="1" source="room1.tsx"/>
+ <layer id="2" name="ground" class="ground" width="30" height="20">
+  <data encoding="base64" compression="zlib">
+   eJztzdtSgQEYQFEpikIRqcgxhyhSqCje/6msl/hmmvHvmXW9U6mkpOPshDSnnJEhyzkXgd8ceS65okCREteB3xvKVLilSo076oHfex54pEGTJ1q0A78duvTo88yAIaPA75gXJkx55Y0Z88DvOws++GTJijVfgd9vftiw5Zc/duwDv0lJ/70DQE8IIQ==
+  </data>
+ </layer>
+ <objectgroup id="3" name="collision">
+  <object id="1" x="785" y="459" width="285" height="65.3333"/>
+  <object id="2" x="774" y="458.75" width="15" height="370.5"/>
+  <object id="3" x="770.182" y="823.273" width="385" height="8"/>
+  <object id="4" x="1140.64" y="459.364" width="14.3636" height="365"/>
+  <object id="5" x="846" y="547.5" width="50" height="100.5"/>
+  <object id="6" x="918" y="545" width="23" height="22"/>
+  <object id="8" x="1114.5" y="458" width="39.5" height="66"/>
+ </objectgroup>
+ <objectgroup id="4" name="interact" class="interact">
+  <object id="9" name="flower" x="799" y="765" width="41.5" height="55.5"/>
+  <object id="10" name="book3" x="810.5" y="709.5" width="40" height="41"/>
+  <object id="11" name="book2" x="858.5" y="673.5" width="38" height="27"/>
+  <object id="12" name="book1" x="911.5" y="533.5" width="36" height="53"/>
+ </objectgroup>
+ <objectgroup id="5" name="door">
+  <object id="14" x="1067.5" y="458.5" width="49.5" height="65.3182"/>
+ </objectgroup>
+</map>
