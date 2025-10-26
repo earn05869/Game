@@ -16,7 +16,7 @@
   <object id="8" x="409.833" y="75.3333" width="39.5" height="66"/>
  </objectgroup>
  <objectgroup id="7" name="entry_point">
-  <object id="18" name="initial_spawn" x="223.333" y="236.667">
+  <object id="18" name="spawn_from_room1" x="382.394" y="208.747">
    <point/>
   </object>
  </objectgroup>
