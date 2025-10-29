@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="17" height="8" tilewidth="64" tileheight="64" infinite="0" nextlayerid="8" nextobjectid="13">
+ <tileset firstgid="1" source="yellow.tsx"/>
+ <layer id="1" name="ground" width="17" height="8">
+  <data encoding="csv">
+65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,0,
+81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,0,
+97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,0,
+113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,0,
+129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,0,
+145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,0,
+161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,0,
+177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,0
+</data>
+ </layer>
+ <objectgroup id="7" name="interact">
+  <object id="12" name="white_point" x="628" y="254.667">
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="3" name="collision">
+  <object id="1" x="26.6667" y="38.6667" width="120" height="429.333"/>
+  <object id="2" x="142" y="397.333" width="858" height="74.6667"/>
+  <object id="3" x="148" y="40" width="852" height="79"/>
+  <object id="4" x="875" y="126" width="126" height="263"/>
+ </objectgroup>
+ <objectgroup id="4" name="teleport">
+  <object id="7" name="hall" x="825.167" y="229.5" width="44.5" height="53.5">
+   <properties>
+    <property name="target_map" value="asset/hall/hall.tmx"/>
+    <property name="target_spawn_point" value="from_yellow"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <objectgroup id="5" name="entry_point">
+  <object id="9" name="from_hall" x="180.5" y="255.5">
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="6" name="track">
+  <object id="10" name="track" x="148.5" y="237">
+   <polygon points="0,0 110.5,0 111,-114 278.25,-114.25 277.75,-85.5 374.25,-86.25 373,87 234.5,87 235,126.5 453.5,126 454.5,15 454.5,-4 726.167,-5.66667 726.5,43 494.5,42.3333 494.955,157 191.25,157.25 190.5,42 333.25,43 333,-45.25 236,-45.5 235.5,-85.75 156,-85.5 156.25,43 -2,40.5 -3,-0.5"/>
+  </object>
+ </objectgroup>
+</map>

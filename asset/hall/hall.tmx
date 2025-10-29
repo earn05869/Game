@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="6" height="11" tilewidth="64" tileheight="64" infinite="0" nextlayerid="7" nextobjectid="25">
+ <tileset firstgid="1" source="../room1/room1.tsx"/>
+ <tileset firstgid="65" source="hall.tsx"/>
+ <layer id="1" name="ground" width="6" height="11">
+  <data encoding="csv">
+65,66,67,68,69,70,
+71,72,73,74,75,76,
+77,78,79,80,81,82,
+83,84,85,86,87,88,
+89,90,91,92,93,94,
+95,96,97,98,99,100,
+101,102,103,104,105,106,
+107,108,109,110,111,112,
+113,114,115,116,117,118,
+119,120,121,122,123,124,
+125,126,127,128,129,130
+</data>
+ </layer>
+ <objectgroup id="4" name="teleport">
+  <object id="11" name="blue" x="88.333" y="150.75" width="39.4167" height="50.3333">
+   <properties>
+    <property name="target_map" value="asset/blue/blue.tmx"/>
+    <property name="target_spawn_point" value="from_hall"/>
+   </properties>
+  </object>
+  <object id="16" name="red" x="88.333" y="329.083" width="38.25" height="49.3333">
+   <properties>
+    <property name="target_map" value="asset/red/red.tmx"/>
+    <property name="target_spawn_point" value="from_hall"/>
+   </properties>
+  </object>
+  <object id="17" name="yellow" x="256.333" y="326.667" width="36.6667" height="52">
+   <properties>
+    <property name="target_map" value="asset/yellow/yellow.tmx"/>
+    <property name="target_spawn_point" value="from_hall"/>
+   </properties>
+  </object>
+ </objectgroup>
+ <objectgroup id="5" name="entry_point">
+  <object id="18" name="from_room1" x="192" y="576">
+   <point/>
+  </object>
+  <object id="19" name="from_red" x="128" y="355">
+   <point/>
+  </object>
+  <object id="20" name="from_blue" x="127.167" y="180.583">
+   <point/>
+  </object>
+  <object id="22" name="from_yellow" x="256" y="355">
+   <point/>
+  </object>
+ </objectgroup>
+ <objectgroup id="2" name="collision">
+  <object id="1" x="81.5" y="19.6667" width="210.667" height="79.25"/>
+  <object id="2" x="45.6667" y="21" width="41.6667" height="663"/>
+  <object id="3" x="87.1512" y="610.242" width="207.182" height="75.2424"/>
+  <object id="6" x="293.792" y="18.5833" width="43.125" height="667.625"/>
+ </objectgroup>
+ <objectgroup id="3" name="interact">
+  <object id="23" name="end" x="164" y="100.667" width="54" height="34.6667"/>
+ </objectgroup>
+</map>
