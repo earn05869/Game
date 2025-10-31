@@ -612,11 +612,11 @@ class Game:
 		# Only the host (shion) sees a darker map view during gameplay/dialogue
 		if self.player_role == 'shion' and self.state in (GameConfig.STATE_PLAYING, GameConfig.STATE_DIALOGUE):
 			# Rebuild overlay each frame: dark fill + transparent circle at player
-			alpha_value = 230  # user-tuned darkness
+			alpha_value = 240  # user-tuned darkness
 			self.shion_dark_surface.fill((0, 0, 0, alpha_value))
 			# Player is rendered centered on screen in this project; cut a hole there
 			player_screen_center = (GameConfig.SCREEN_WIDTH // 2, GameConfig.SCREEN_HEIGHT // 2)
-			spot_radius = 70
+			spot_radius = 140
 			pygame.draw.circle(self.shion_dark_surface, (0, 0, 0, 0), player_screen_center, spot_radius)
 			self.screen.blit(self.shion_dark_surface, (0, 0))
 		
