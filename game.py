@@ -35,6 +35,10 @@ class Game:
 		self.fade_surface.fill((0, 0, 0))
 		self.fade_alpha = 255  # Start with black screen
 
+		# ===== SHION DARK OVERLAY =====
+		self.shion_dark_surface = pygame.Surface((GameConfig.SCREEN_WIDTH, GameConfig.SCREEN_HEIGHT))
+		self.shion_dark_surface.fill((0, 0, 0))
+
 		# ===== LOAD CHARACTER PORTRAITS =====
 		self.character_portraits: Dict[str, pygame.Surface] = {}
 		self._load_character_portraits()
@@ -607,6 +611,13 @@ class Game:
 		# ===== 3. DRAW UI OVERLAY =====
 		if self.dialog_system.is_active:
 			self.dialog_system.draw(self.screen)
+
+		# ===== 3.5 DRAW SHION DARK OVERLAY =====
+		# Only the host (shion) sees a darker map view during gameplay/dialogue
+		if self.player_role == 'shion' and self.state in (GameConfig.STATE_PLAYING, GameConfig.STATE_DIALOGUE):
+			# Semi-transparent black overlay
+			self.shion_dark_surface.set_alpha(120)
+			self.screen.blit(self.shion_dark_surface, (0, 0))
 		
 		# ===== 4. DRAW FADE OVERLAY =====
 		if self.fade_alpha > 0:
