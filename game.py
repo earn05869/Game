@@ -5,6 +5,9 @@ from simple_2d_game import *
 from HomePage import HomePage
 from network import NetworkClient
 import threading
+import subprocess
+import sys
+import time
 
 class Game:
 	"""
@@ -80,6 +83,9 @@ class Game:
 		self.player_transform: Optional[Transform] = None
 		self.player_collider: Optional[BoxCollider] = None
 
+		# ===== LOCAL SERVER PROCESS (HOST ONLY) =====
+		self.server_process: Optional[subprocess.Popen] = None
+
 	def _connect_to_server(self):
 		"""Connect to multiplayer server."""
 		print("[GAME] Connecting to server...")
@@ -88,8 +94,15 @@ class Game:
 		# Create network client
 		self.network = NetworkClient(GameConfig.SERVER_HOST, GameConfig.SERVER_PORT)
 		
-		# Connect
-		if self.network.connect():
+		# Connect (retry briefly to allow local server startup)
+		connected = False
+		for _ in range(15):  # ~3s total at 0.2s interval
+			if self.network.connect():
+				connected = True
+				break
+			time.sleep(0.2)
+
+		if connected:
 			self.player_id = self.network.player_id
 			print(f"[GAME] Connected as Player {self.player_id}")
 			self.state = GameConfig.STATE_WAITING
@@ -104,6 +117,18 @@ class Game:
 			print("[GAME] Failed to connect to server")
 			self.state = GameConfig.STATE_HOME
 			return False
+
+	def _start_local_server(self):
+		"""Start local server.py in a background process (host only)."""
+		if self.server_process and self.server_process.poll() is None:
+			# Already running
+			return
+		try:
+			server_path = os.path.join(os.path.dirname(__file__), 'server.py')
+			print(f"[GAME] Starting local server: {server_path}")
+			self.server_process = subprocess.Popen([sys.executable, server_path], cwd=os.path.dirname(server_path))
+		except Exception as e:
+			print(f"[GAME] Failed to start local server: {e}")
 	
 	def _on_server_ready(self):
 		"""Called when server sends ready signal (both players connected)."""
@@ -236,6 +261,8 @@ class Game:
 					# Host: Set role as 'shion' and connect to server
 					self.player_role = 'shion'
 					print(f"[GAME] Role set to: {self.player_role}")
+					# Try starting local server for host
+					self._start_local_server()
 					if self._connect_to_server():
 						# Connection successful, will wait for other player
 						pass
@@ -652,6 +679,20 @@ class Game:
 			self.draw()
 			
 		pygame.quit()
+		# Stop local server if we started one
+		try:
+			if self.server_process and self.server_process.poll() is None:
+				print("[GAME] Terminating local server...")
+				self.server_process.terminate()
+				# Give it a moment to exit
+				for _ in range(10):
+					if self.server_process.poll() is not None:
+						break
+					time.sleep(0.1)
+				if self.server_process.poll() is None:
+					self.server_process.kill()
+		except Exception:
+			pass
 		sys.exit()
 
 
