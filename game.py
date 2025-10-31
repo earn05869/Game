@@ -517,6 +517,15 @@ class Game:
 						self.player_transform.rect.centery
 					)
 				# Join player doesn't send position - they use host's position
+				elif self.player_role == 'shione':
+					# Follow host's latest position so local collisions/teleports match
+					try:
+						hx = int(self.other_player_pos.get('x', self.player_transform.rect.centerx))
+						hy = int(self.other_player_pos.get('y', self.player_transform.rect.centery))
+						self.player_transform.rect.centerx = hx
+						self.player_transform.rect.centery = hy
+					except Exception:
+						pass
 			
 			# Update camera to follow player
 			self.camera.update(self.player_transform.rect.center)
