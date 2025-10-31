@@ -608,19 +608,15 @@ class Game:
 		)
 		self.screen.blit(scaled_surface, (0, 0))
 		
-		# ===== 3. DRAW UI OVERLAY =====
-		if self.dialog_system.is_active:
-			self.dialog_system.draw(self.screen)
-
-		# ===== 3.5 DRAW SHION DARK OVERLAY =====
+		# ===== 3. DRAW SHION DARK OVERLAY =====
 		# Only the host (shion) sees a darker map view during gameplay/dialogue
 		if self.player_role == 'shion' and self.state in (GameConfig.STATE_PLAYING, GameConfig.STATE_DIALOGUE):
 			# Rebuild overlay each frame: dark fill + transparent circle at player
-			alpha_value = 200  # user-tuned darkness
+			alpha_value = 250  # user-tuned darkness
 			self.shion_dark_surface.fill((0, 0, 0, alpha_value))
 			# Player is rendered centered on screen in this project; cut a hole there
 			player_screen_center = (GameConfig.SCREEN_WIDTH // 2, GameConfig.SCREEN_HEIGHT // 2)
-			spot_radius = 140
+			spot_radius = 50
 			pygame.draw.circle(self.shion_dark_surface, (0, 0, 0, 0), player_screen_center, spot_radius)
 			self.screen.blit(self.shion_dark_surface, (0, 0))
 		
@@ -628,6 +624,10 @@ class Game:
 		if self.fade_alpha > 0:
 			self.fade_surface.set_alpha(self.fade_alpha)
 			self.screen.blit(self.fade_surface, (0, 0))
+
+		# ===== 4.5 DRAW DIALOG OVERLAY (TOPMOST) =====
+		if self.dialog_system.is_active:
+			self.dialog_system.draw(self.screen)
 
 		# ===== 5. FLIP DISPLAY =====
 		pygame.display.flip()
