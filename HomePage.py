@@ -55,9 +55,9 @@ class HomePage:
 		"""Create Host and Join buttons."""
 		# Host button
 		host_rect = pygame.Rect(
-			GameConfig.SCREEN_WIDTH // 2 - 150,
+			GameConfig.SCREEN_WIDTH // 4 - 200,
 			GameConfig.SCREEN_HEIGHT // 2 - 50,
-			300, 100
+			400, 80
 		)
 		self.buttons.append({
 			'rect': host_rect,
@@ -69,9 +69,9 @@ class HomePage:
 		
 		# Join button
 		join_rect = pygame.Rect(
-			GameConfig.SCREEN_WIDTH // 2 - 150,
+			GameConfig.SCREEN_WIDTH // 4 - 200,
 			GameConfig.SCREEN_HEIGHT // 2 + 100,
-			300, 100
+			400, 80
 		)
 		self.buttons.append({
 			'rect': join_rect,
