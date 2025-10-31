@@ -10,18 +10,18 @@ class SceneManager(SM):
 		self.camera = camera
 		self.state = GET_STATE()
 	
-	def change_state(self, state: STATE):
-		scene = None
-		ResourceManager.clear()
-		match (state) :
-			case STATE.HOME:
-				scene = HomeScene(self.camera)
-			case STATE.CONNECT:
-				scene = HomeScene(self.camera)
-			case STATE.QUIT:
-				print("[QUIT GAME]")
-			case _: print("Not have", state)
-		self.change_scene(scene)
+	def change_state(self, state: STATE):pass
+		# scene = None
+		# ResourceManager.clear()
+		# match (state) :
+		# 	case STATE.HOME:
+		# 		scene = HomeScene(self.camera)
+		# 	case STATE.CONNECT:
+		# 		scene = HomeScene(self.camera)
+		# 	case STATE.QUIT:
+		# 		print("[QUIT GAME]")
+		# 	case _: print("Not have", state)
+		# self.change_scene(scene)
   
 	def update(self):
 		if self.state != GET_STATE():

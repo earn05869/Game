@@ -2,6 +2,10 @@
 # MAIN GAME CLASS
 # ============================================================================
 from simple_2d_game import *
+from HomePage import HomePage
+from network import NetworkClient
+import threading
+
 class Game:
 	"""
 	Main game controller - manages game loop, scene transitions, and all systems.
@@ -46,9 +50,20 @@ class Game:
 		self.camera = Camera(game_surface_size[0], game_surface_size[1])
 
 		# ===== GAME STATE =====
-		self.state = GameConfig.STATE_FADING_IN  # Start with fade-in effect
+		self.state = GameConfig.STATE_HOME  # Start with home screen
 		self.current_interaction_target = None
 		self.game_flags = set()  # For tracking story progress
+
+		# ===== HOME PAGE =====
+		self.home_page = HomePage()
+
+		# ===== NETWORK & MULTIPLAYER =====
+		self.network = None
+		self.player_id = None
+		self.player_role = None  # 'shion' or 'shione'
+		self.other_player_pos = {'x': 0, 'y': 0}  # Other player's position
+		self.other_player_sprite = None  # Other player's visual representation
+		self.game_started = False  # Prevent starting game multiple times
 
 		# ===== SCENE & PLAYER REFERENCES =====
 		self.scene: Optional[Scene] = None
@@ -56,10 +71,55 @@ class Game:
 		self.player_transform: Optional[Transform] = None
 		self.player_collider: Optional[BoxCollider] = None
 
-		# ===== LOAD STARTING SCENE =====
+	def _connect_to_server(self):
+		"""Connect to multiplayer server."""
+		print("[GAME] Connecting to server...")
+		self.state = GameConfig.STATE_CONNECTING
+		
+		# Create network client
+		self.network = NetworkClient(GameConfig.SERVER_HOST, GameConfig.SERVER_PORT)
+		
+		# Connect
+		if self.network.connect():
+			self.player_id = self.network.player_id
+			print(f"[GAME] Connected as Player {self.player_id}")
+			self.state = GameConfig.STATE_WAITING
+			
+			# Set callbacks
+			self.network.set_position_callback(self._on_position_update)
+			self.network.set_ready_callback(self._on_server_ready)
+			
+			return True
+		else:
+			print("[GAME] Failed to connect to server")
+			self.state = GameConfig.STATE_HOME
+			return False
+	
+	def _on_server_ready(self):
+		"""Called when server sends ready signal (both players connected)."""
+		print("[GAME] Server ready! Starting game...")
+		self._start_game()
+	
+	def _on_position_update(self, message: dict):
+		"""Called when we receive position update from other player."""
+		pid = message.get('player_id')
+		pos = message.get('position', {})
+		
+		if pid and pid != self.player_id:
+			self.other_player_pos = pos
+	
+	def _start_game(self):
+		"""Start the game from home screen."""
+		# Prevent multiple starts
+		if self.game_started:
+			return
+		
+		self.game_started = True
+		
+		# Load starting scene
 		self.load_scene(GameConfig.START_MAP_PATH, "initial_spawn")
-
-		# ===== START OPENING CUTSCENE =====
+		
+		# Start opening cutscene
 		self.dialog_system.start_conversation("intro")
 		self.state = GameConfig.STATE_DIALOGUE
 
@@ -151,6 +211,25 @@ class Game:
 			if event.type == pygame.QUIT:
 				return False
 			
+			# ===== HANDLE HOME PAGE INPUT =====
+			if self.state == GameConfig.STATE_HOME:
+				result = self.home_page.handle_input(event)
+				if result == 'host':
+					# Host: Set role as 'shion' and connect to server
+					self.player_role = 'shion'
+					print(f"[GAME] Role set to: {self.player_role}")
+					if self._connect_to_server():
+						# Connection successful, will wait for other player
+						pass
+				elif result == 'join':
+					# Join: Set role as 'shione' and connect to server
+					self.player_role = 'shione'
+					print(f"[GAME] Role set to: {self.player_role}")
+					if self._connect_to_server():
+						# Connection successful, will wait for other player
+						pass
+				continue
+			
 			if event.type == pygame.KEYDOWN:
 				
 				# ===== E KEY: DIALOGUE & INTERACTION =====
@@ -229,6 +308,15 @@ class Game:
 		dt_ms: Delta time in milliseconds (for frame-independent timing).
 		"""
 		
+		# ===== STATE: HOME (Do nothing, just wait for button clicks) =====
+		if self.state == GameConfig.STATE_HOME:
+			return
+		
+		# ===== STATE: WAITING =====
+		# Do nothing - wait for server ready callback to trigger _start_game()
+		if self.state == GameConfig.STATE_WAITING:
+			return
+		
 		# ===== STATE: FADING OUT (Before teleport) =====
 		if self.state == GameConfig.STATE_FADING_OUT:
 			self.fade_alpha += GameConfig.FADE_SPEED
@@ -261,6 +349,13 @@ class Game:
 			# Update all game objects
 			self.scene.update()
 			
+			# Send position to server
+			if self.network and self.network.is_connected():
+				self.network.send_position(
+					self.player_transform.rect.centerx,
+					self.player_transform.rect.centery
+				)
+			
 			# Update camera to follow player
 			self.camera.update(self.player_transform.rect.center)
 			
@@ -274,6 +369,46 @@ class Game:
 
 	def draw(self) -> None:
 		"""Render the current frame."""
+		
+		# ===== STATE: HOME =====
+		if self.state == GameConfig.STATE_HOME:
+			self.home_page.draw(self.screen)
+			pygame.display.flip()
+			return
+		
+		# ===== STATE: CONNECTING =====
+		if self.state == GameConfig.STATE_CONNECTING:
+			self.screen.fill((20, 10, 30))
+			font = pygame.font.Font(None, 48)
+			text = font.render("Connecting to server...", True, (255, 255, 255))
+			text_rect = text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2))
+			self.screen.blit(text, text_rect)
+			pygame.display.flip()
+			return
+		
+		# ===== STATE: WAITING =====
+		if self.state == GameConfig.STATE_WAITING:
+			self.screen.fill((20, 10, 30))
+			font = pygame.font.Font(None, 48)
+			role_font = pygame.font.Font(None, 36)
+			
+			# Show role if set
+			if self.player_role:
+				role_text = role_font.render(f"Role: {self.player_role.upper()}", True, (200, 200, 255))
+				role_rect = role_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 - 80))
+				self.screen.blit(role_text, role_rect)
+			
+			player_text = font.render(f"You are Player {self.player_id}", True, (255, 255, 255))
+			wait_text = font.render("Waiting for other player...", True, (200, 200, 200))
+			
+			player_rect = player_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 - 20))
+			wait_rect = wait_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 + 40))
+			
+			self.screen.blit(player_text, player_rect)
+			self.screen.blit(wait_text, wait_rect)
+			pygame.display.flip()
+			return
+		
 		if not self.scene:
 			return
 		
