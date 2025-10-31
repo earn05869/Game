@@ -526,47 +526,6 @@ class PlayerController(Component):
 			surface.blit(self.current_sprite, self.screen_rect)
 
 
-class Door(Component, pygame.sprite.Sprite):
-	"""
-	An interactable door that can be locked/unlocked.
-	When locked, acts as a solid wall. When unlocked, can walk through.
-	"""
-	
-	def __init__(self):
-		Component.__init__(self)
-		pygame.sprite.Sprite.__init__(self)
-		self.is_locked = True
-		self.collider: Optional[BoxCollider] = None
-		self.rect: Optional[pygame.Rect] = None
-		
-	def awake(self):
-		self.transform = self.game_object.get_component(Transform)
-		self.collider = self.game_object.get_component(BoxCollider)
-		
-		if not self.transform or not self.collider:
-			raise TypeError(f"GameObject '{self.game_object.name}' needs Transform and BoxCollider for Door")
-
-		self.rect = self.transform.rect.copy()
-		self.scene.interactables.add(self)
-		
-		# Set initial collision state
-		if self.is_locked:
-			self.scene.solid_objects.add(self.collider)
-		else:
-			self.scene.solid_objects.remove(self.collider)
-
-	def toggle(self) -> None:
-		"""Lock/unlock door (press E to toggle)."""
-		self.is_locked = not self.is_locked
-		
-		if self.is_locked:
-			self.scene.solid_objects.add(self.collider)
-			print("Door locked.")
-		else:
-			self.scene.solid_objects.remove(self.collider)
-			print("Door unlocked.")
-
-
 class Interactable(Component, pygame.sprite.Sprite):
 	"""
 	Generic interactable object (books, NPCs, items).
@@ -728,17 +687,7 @@ class Scene:
 		except ValueError:
 			print("Warning: 'collision' layer not found in map")
 		
-		# ===== DOOR LAYER =====
-		# Lockable/unlockable barriers
-		try:
-			for obj in self.tmx_data.get_layer_by_name("door"):
-				go = GameObject(self, name=f"Door_{obj.id}")
-				go.add_component(Transform(obj.x, obj.y, obj.width, obj.height))
-				go.add_component(BoxCollider(is_solid=True))
-				go.add_component(Door())
-				self.add_game_object(go)
-		except ValueError:
-			print("Warning: 'door' layer not found in map")
+		# (Door layer removed)
 		
 		# ===== INTERACT LAYER =====
 		# Objects you can press E on (NPCs, items, etc.)
@@ -910,7 +859,7 @@ class DialogSystem:
 		# Each script is a sequence of DialogueLines
 		# Script ID matches the Interactable object's name
 		self.scripts: Dict[str, List[DialogueLine]] = {
-		 "intro": [
+		 "intro room1": [
 			DialogueLine(None, "ตื่นขึ้นมาอีกครั้งในห้องที่เธอไม่รู้จัก — ผนังขาวสะอาดเหมือนกระดาษเปล่า ไม่มีเสียงนาฬิกา ไม่มีหน้าต่าง มีเพียงเสียงเครื่องช่วยหายใจแผ่วเบา"),
 			DialogueLine(None, "เธอรู้ทันที… นี่ไม่ใช่โลกของเธอ แต่ก็ไม่ใช่โลกของเกมนั้นด้วย"),
 			DialogueLine("Shione", "เฮ้… ชิอน ได้ยินฉันไหม?", emotion="surprise", instant_shake=True, portrait_key="shione_neutral"), # <-- ใช้ key
@@ -978,10 +927,42 @@ class DialogSystem:
 			DialogueLine("Shion", "(น้ำตาไหล) แล้วถ้าที่นี่มันคือความจริง... ทำไมฉันถึงต้องเจ็บปวดขนาดนี้ด้วยล่ะ...", emotion="sadness", portrait_key="shion_neutral"), #<-- shion_sadness?
 			DialogueLine("Shione", "(เสียงสั่น) เพราะการเจ็บปวด... คือสิ่งเดียวที่พิสูจน์ได้ว่าเธอยัง ‘มีชีวิต’ อยู่", emotion="sadness", portrait_key="shione_neutral"), #<-- shione_sadness?
 		],
-		"_tutorial_bed": [
+		"bed": [
 			DialogueLine("Shione", "ถ้าพร้อมไปต่อให้คุณนอนลงที่เตียง และจงจำไว้ว่า การกระทำไม่ว่าด้วยการคิดวิเคราะห์หรือความรู้สึก ไม่สามารถย้อนกลับได้", portrait_key="shione_neutral")
 		],
 		"flower": [DialogueLine(None, "จริงๆ ก็ยังไม่ได้ทำระบบ save แหละ แหะๆ โทษที เพราะงั้นเกมนี้ ไปต่อได้อย่างเดียวย้อนไม่ได้ อ่อ ปุ่มย้อนกลับก็ยังไม่ทำเพราะงั้นคิดดีๆ ก่อนทำนะคับ จาก เปิร์น")],
+		"paper": [
+			DialogueLine(None, "ดวงตาทั้ง 7 มี 1 ในนี้เป็นดวงตาของฆาตกร และเจ้าของมันกำลังจะมา ตอนนี้นายท่านอยู่ที่ประตูแล้ว บอกเขาว่าตาไหนเป็นฆาตกร 2 ตา พูดโกหก 3 ตา พูดจริง 2 ตาไม่ทราบ"),
+			DialogueLine("Shione", " เราต้องรีบหาฆาตกรให้เจอนะ ไม่งั้นเราจะไม่รอด", portrait_key="shione_neutral"),
+			DialogueLine("Shion", "ฆาตกรหรอ บอกฉันที ว่าที่นี่เกิดอะไรขึ้น", portrait_key="shion_neutral"),
+		],
+		"cyan": [DialogueLine(None, "ตาด้านขวาของฉันเป็นฆาตกร")],
+		"purple": [DialogueLine(None, "ตาสีเหลืองเป็นฆาตกร")],
+		"green": [DialogueLine(None, "ตาถัดจากฉันไปทางซ้าย 2 ดวง พูดความจริง")],
+		"blue": [DialogueLine(None, "ตาตรงข้ามฉันเป็นฆาตกร")],
+		"yellow": [DialogueLine(None, "ฉันไม่รู้ แต่สีเขียวดูเหมือนจะพูดความจริง")],
+		"red": [DialogueLine(None, "ตาสีม่วงเป็นฆาตกร")],
+		"brown": [DialogueLine(None, "ฉันไม่เชื่อตาสีน้ำเงิน")],
+		"intro blue": [
+			DialogueLine("Shione", "ที่นี่เหมือนความฝันเลย มีต้นไม้เหมือนก้อนเมฆ พื้นเหมือนท้องฟ้า แต่อย่าโดนมันหลอกนะ", portrait_key="shione_neutral"),
+			DialogueLine("Shion", "เข้าใจแล้ว", portrait_key="shion_neutral"),
+		],
+		"rabbit": [
+			DialogueLine("Rabbit", "พี่มาทำอะไรที่นี่หรอคะ หนูน่ะไม่อยากให้พี่ออกไปเลย", portrait_key="shione_neutral"),
+			DialogueLine("Shione", "ฉันว่าเราควรจะจัดการนะ", portrait_key="shione_neutral"),
+		],
+		"sheep": [
+			DialogueLine("Sheep", "พ....พวกคุณมาทำอะไรที่นี่หรอค่ะ ช่วยฉันด้วย", portrait_key="shione_neutral"),
+			DialogueLine("Shione", "เราควรช่วยเขานะ", portrait_key="shione_neutral"),
+		],
+		"fish": [DialogueLine("Shione", "เงือกอยู่บนน้ำ มันน่าสงสัยไปแล้วรึเปล่า", portrait_key="shione_neutral")],
+		"intro yellow": [
+			DialogueLine("Shione", "ห้องนี้เหมือนจะเป็นทางเดินดอกแดนดิไลออนนะ เดินตามที่ฉันบอกนะ", portrait_key="shione_neutral"),
+			DialogueLine("Shion", "เข้าใจแล้ว", portrait_key="shion_neutral"),
+		],
+		"white": [
+			DialogueLine("Shion", "ฉันมองเห็น", portrait_key="shion_neutral")],
+		"closed_door": [DialogueLine(None, "ประตูนี้ปิดอยู่")],
 		"default": [DialogueLine(None, "An interesting object.")],
 		}
 
@@ -1175,7 +1156,9 @@ class DialogSystem:
 		"""
 		Render the dialogue box, text, and character portrait.
 		"""
-		if not self.is_active or not self.current_line_data:
+		# Copy reference to avoid mid-draw changes from other threads
+		line_data = self.current_line_data
+		if not self.is_active or not line_data:
 			return
 
 		# ===== 1. DRAW CHARACTER PORTRAIT =====
@@ -1190,16 +1173,16 @@ class DialogSystem:
 		# ===== 3. DETERMINE TEXT COLOR =====
 		# Priority: Character color > Emotion color > Default
 		current_text_color = GameConfig.TEXT_COLOR_NEUTRAL
-		speaker_name = self.current_line_data.speaker
+		speaker_name = line_data.speaker if line_data else None
 		
 		if speaker_name and speaker_name in GameConfig.CHARACTER_COLORS:
 			# Use character-specific color
 			current_text_color = GameConfig.CHARACTER_COLORS[speaker_name]
-		elif self.current_line_data.emotion == "surprise":
+		elif line_data and line_data.emotion == "surprise":
 			current_text_color = GameConfig.TEXT_COLOR_SURPRISE
-		elif self.current_line_data.emotion == "anger":
+		elif line_data and line_data.emotion == "anger":
 			current_text_color = GameConfig.TEXT_COLOR_ANGER
-		elif self.current_line_data.emotion == "sadness":
+		elif line_data and line_data.emotion == "sadness":
 			current_text_color = GameConfig.TEXT_COLOR_SADNESS
 
 		# ===== 4. DRAW SPEAKER NAME BOX =====

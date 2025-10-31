@@ -56,6 +56,19 @@ class Game:
 		self.interaction_prompt = InteractionPrompt()
 		self.camera = Camera(game_surface_size[0], game_surface_size[1])
 
+		# ===== SCENE-ENTRY DIALOGUE =====
+		# Map path -> intro script id (only listed maps will trigger)
+		def _norm(p: Optional[str]) -> str:
+			try:
+				return os.path.normpath(p) if p else ""
+			except Exception:
+				return p or ""
+		self.map_intro_scripts: Dict[str, str] = {
+			_norm("asset/yellow/yellow.tmx"): "intro yellow",
+			_norm("asset/blue/blue.tmx"): "intro blue",
+		}
+		self.pending_intro_script: Optional[str] = None
+
 		# ===== GAME STATE =====
 		self.state = GameConfig.STATE_HOME  # Start with home screen
 		self.current_interaction_target = None
@@ -151,10 +164,9 @@ class Game:
 	
 	def _on_key_event(self, event_data: dict):
 		"""Called when we receive key event from host (for join player)."""
-		# Process key event immediately for synchronized input
-		# This ensures dialogue advances at the exact same time for both players
+		# Queue key events to process on the main thread in update() to avoid race conditions
 		if self.player_role == 'shione':
-			self._process_received_key_event(event_data)
+			self.pending_key_events.append(event_data)
 	
 	def _start_game(self):
 		"""Start the game from home screen."""
@@ -168,7 +180,7 @@ class Game:
 		self.load_scene(GameConfig.START_MAP_PATH, "initial_spawn")
 		
 		# Start opening cutscene
-		self.dialog_system.start_conversation("intro")
+		self.dialog_system.start_conversation("intro room1")
 		self.state = GameConfig.STATE_DIALOGUE
 
 	def _load_character_portraits(self):
@@ -249,6 +261,19 @@ class Game:
 		# Initialize all scene objects
 		self.scene.start()
 		self.current_interaction_target = None
+
+		# ===== SETUP PENDING INTRO (HOST ONLY) =====
+		# Only trigger if this map has an intro and it hasn't been shown yet
+		if self.player_role == 'shion':
+			try:
+				norm_map = os.path.normpath(map_path)
+			except Exception:
+				norm_map = map_path
+			intro_script = self.map_intro_scripts.get(norm_map)
+			if intro_script:
+				flag_key = f"intro_shown:{norm_map}"
+				if flag_key not in self.game_flags:
+					self.pending_intro_script = intro_script
 
 	def handle_input(self) -> bool:
 		"""
@@ -338,12 +363,7 @@ class Game:
 								self.teleport_target_spawn = teleport_comp.target_spawn_point
 								return True
 
-							# Priority 2: Door toggle
-							door_comp = game_object.get_component(Door)
-							if door_comp:
-								door_comp.toggle()
-							
-							# Priority 3: Generic interactable (start dialogue)
+							# Next: Generic interactable (start dialogue)
 							interact_comp = game_object.get_component(Interactable)
 							if interact_comp:
 								# Dialogue script ID = object name
@@ -399,12 +419,7 @@ class Game:
 							self.teleport_target_map = teleport_comp.target_map
 							self.teleport_target_spawn = teleport_comp.target_spawn_point
 
-						# Priority 2: Door toggle
-						door_comp = game_object.get_component(Door)
-						if door_comp:
-							door_comp.toggle()
-						
-						# Priority 3: Generic interactable (start dialogue)
+						# Next: Generic interactable (start dialogue)
 						interact_comp = game_object.get_component(Interactable)
 						if interact_comp:
 							# Dialogue script ID = object name
@@ -464,6 +479,15 @@ class Game:
 				self.state = GameConfig.STATE_FADING_IN
 			return
 
+		# ===== PROCESS QUEUED KEY EVENTS (JOIN PLAYER) =====
+		# Handle received key events on the main thread to avoid race conditions
+		if self.player_role == 'shione' and self.pending_key_events:
+			try:
+				for ev in list(self.pending_key_events):
+					self._process_received_key_event(ev)
+			finally:
+				self.pending_key_events.clear()
+
 		# ===== FADE IN/OUT VISUAL EFFECT =====
 		if self.fade_alpha > 0:
 			self.fade_alpha -= GameConfig.FADE_SPEED
@@ -473,6 +497,21 @@ class Game:
 				if self.state == GameConfig.STATE_FADING_IN:
 					self.state = GameConfig.STATE_PLAYING
 					self.teleport_target_map = None
+					# After entering PLAYING, start pending intro if any (HOST ONLY)
+					if self.player_role == 'shion' and self.pending_intro_script:
+						self.dialog_system.start_conversation(self.pending_intro_script)
+						if self.dialog_system.is_active:
+							self.state = GameConfig.STATE_DIALOGUE
+							# Mark flag so it only plays once per map
+							try:
+								current_map = self.scene.map_path if self.scene else None
+								if current_map:
+									norm_map = os.path.normpath(current_map)
+									self.game_flags.add(f"intro_shown:{norm_map}")
+							except Exception:
+								pass
+						# Clear pending
+						self.pending_intro_script = None
 
 		# ===== UPDATE DIALOGUE SYSTEM =====
 		# Typewriter effect needs to run even during dialogue state
@@ -716,4 +755,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+	main()

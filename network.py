@@ -99,7 +99,7 @@ class NetworkClient:
 		
 		print("[NETWORK] Disconnected from server")
 	
-	def send_position(self, x: float, y: float, direction: str | None = None):
+	def send_position(self, x: float, y: float, direction: Optional[str] = None):
 		"""
 		Send current position (and optional facing direction) to server.
 		"""
