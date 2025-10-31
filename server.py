@@ -156,16 +156,23 @@ def broadcast_dialogue_state(dialog_state: dict):
 def broadcast_input(input_keys: dict):
 	"""
 	Broadcast input keys from host to join player.
+	After sending, the input is consumed (no state stored on server).
+	Each frame sends fresh input from host, so no clearing needed.
 	"""
 	with lock:
 		# Only send to player 2 (join player)
 		if 2 in connected_players:
 			try:
+				# Send current input
+				# Server doesn't store input state - it's forwarded immediately
+				# This ensures fresh input every frame from host
 				message = json.dumps({
 					'type': 'input',
 					'keys': input_keys
 				})
 				connected_players[2]['socket'].sendall(message.encode('utf-8'))
+				# Input is cleared automatically since server doesn't cache it
+				# Each frame receives new input from host
 			except Exception as e:
 				print(f"[SERVER] Failed to send input to player 2: {e}")
 

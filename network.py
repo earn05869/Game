@@ -213,8 +213,21 @@ class NetworkClient:
 		self.on_key_event = callback
 	
 	def get_received_input_keys(self) -> dict:
-		"""Get the latest received input keys (for join player)."""
-		return self.received_input_keys
+		"""
+		Get the latest received input keys (for join player).
+		After reading, input is cleared to prevent persistence.
+		"""
+		keys = self.received_input_keys.copy()
+		# Clear input after reading to prevent persistence
+		# This ensures input doesn't carry over to next frame
+		self.received_input_keys = {
+			'w': False,
+			'a': False,
+			's': False,
+			'd': False,
+			'e': False
+		}
+		return keys
 	
 	def pop_received_key_events(self) -> list:
 		"""Get and clear received key events queue."""
