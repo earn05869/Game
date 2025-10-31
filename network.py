@@ -28,8 +28,14 @@ class NetworkClient:
 		# Callback for when server is ready
 		self.on_ready: Optional[Callable] = None
 		
+		# Callback for when we receive input updates (for join player)
+		self.on_input_update: Optional[Callable] = None
+		
 		# Flag to track ready state
 		self.server_ready = False
+		
+		# Received input keys (for join player)
+		self.received_input_keys = {}
 	
 	def connect(self) -> bool:
 		"""
@@ -92,10 +98,25 @@ class NetworkClient:
 			return
 		
 		try:
-			message = json.dumps({'x': x, 'y': y})
+			message = json.dumps({'type': 'position', 'x': x, 'y': y})
 			self.socket.sendall(message.encode('utf-8'))
 		except Exception as e:
 			print(f"[NETWORK] Failed to send position: {e}")
+			self.connected = False
+	
+	def send_input(self, keys: dict):
+		"""
+		Send input keys to server (host only).
+		keys: dict with keys like {'w': bool, 'a': bool, 's': bool, 'd': bool, 'e': bool}
+		"""
+		if not self.connected or not self.socket:
+			return
+		
+		try:
+			message = json.dumps({'type': 'input', 'keys': keys})
+			self.socket.sendall(message.encode('utf-8'))
+		except Exception as e:
+			print(f"[NETWORK] Failed to send input: {e}")
 			self.connected = False
 	
 	def _receive_loop(self):
@@ -120,9 +141,15 @@ class NetworkClient:
 					self.server_ready = True
 					if self.on_ready:
 						self.on_ready()
+				# Check if it's an input update
+				elif message.get('type') == 'input':
+					self.received_input_keys = message.get('keys', {})
+					if self.on_input_update:
+						self.on_input_update(self.received_input_keys)
 				# Otherwise it's a position update
-				elif self.on_position_update:
-					self.on_position_update(message)
+				elif message.get('type') == 'position' or 'position' in message:
+					if self.on_position_update:
+						self.on_position_update(message)
 					
 			except json.JSONDecodeError:
 				continue
@@ -137,6 +164,17 @@ class NetworkClient:
 		Callback will receive: {'player_id': int, 'position': {'x': float, 'y': float}}
 		"""
 		self.on_position_update = callback
+	
+	def set_input_callback(self, callback: Callable):
+		"""
+		Set callback function to be called when receiving input updates.
+		Callback will receive: dict of input keys
+		"""
+		self.on_input_update = callback
+	
+	def get_received_input_keys(self) -> dict:
+		"""Get the latest received input keys (for join player)."""
+		return self.received_input_keys
 	
 	def is_connected(self) -> bool:
 		"""Check if still connected to server."""

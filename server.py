@@ -53,16 +53,27 @@ def handle_client(client_socket, addr, player_id):
 					print(f"[SERVER] Player {player_id} requested disconnect")
 					break
 				
-				# Parse JSON position data
-				pos_data = json.loads(message)
+				# Parse JSON message
+				msg_data = json.loads(message)
+				msg_type = msg_data.get('type')
 				
-				# Update player position in shared state
-				with lock:
-					if player_id in connected_players:
-						connected_players[player_id]['position'] = pos_data
+				# Handle position update
+				if msg_type == 'position' or 'x' in msg_data:
+					pos_data = {'x': msg_data.get('x', 0), 'y': msg_data.get('y', 0)}
+					
+					# Update player position in shared state
+					with lock:
+						if player_id in connected_players:
+							connected_players[player_id]['position'] = pos_data
+					
+					# Broadcast to all other players
+					broadcast_position(player_id, pos_data)
 				
-				# Broadcast to all other players
-				broadcast_position(player_id, pos_data)
+				# Handle input update (only from host/player 1)
+				elif msg_type == 'input' and player_id == 1:
+					input_keys = msg_data.get('keys', {})
+					# Forward input to join player (player 2)
+					broadcast_input(input_keys)
 				
 			except json.JSONDecodeError as e:
 				print(f"[SERVER] Invalid JSON from player {player_id}: {e}")
@@ -97,6 +108,22 @@ def broadcast_position(sender_id: int, position: dict):
 					player_data['socket'].sendall(message.encode('utf-8'))
 				except Exception as e:
 					print(f"[SERVER] Failed to send to player {pid}: {e}")
+
+def broadcast_input(input_keys: dict):
+	"""
+	Broadcast input keys from host to join player.
+	"""
+	with lock:
+		# Only send to player 2 (join player)
+		if 2 in connected_players:
+			try:
+				message = json.dumps({
+					'type': 'input',
+					'keys': input_keys
+				})
+				connected_players[2]['socket'].sendall(message.encode('utf-8'))
+			except Exception as e:
+				print(f"[SERVER] Failed to send input to player 2: {e}")
 
 def get_all_positions() -> dict:
 	"""Get all player positions for initial sync."""

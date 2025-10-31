@@ -407,24 +407,48 @@ class PlayerController(Component):
 			return
 			
 		# ===== INPUT HANDLING =====
-		keys = pygame.key.get_pressed()
+		# Check player role - join player uses network input
+		game = self.scene.game
+		player_role = getattr(game, 'player_role', None)
+		
 		dx, dy = 0, 0
 		
-		# Vertical movement
-		if keys[pygame.K_w]:
-			dy = -self.speed
-			self.direction = "back"
-		elif keys[pygame.K_s]:
-			dy = self.speed
-			self.direction = "front"
-		
-		# Horizontal movement
-		if keys[pygame.K_a]:
-			dx = -self.speed
-			self.direction = "left"
-		elif keys[pygame.K_d]:
-			dx = self.speed
-			self.direction = "right"
+		# If join player, use input from network
+		if player_role == 'shione' and game.network:
+			received_keys = game.network.get_received_input_keys()
+			# Use received input keys
+			if received_keys.get('w', False):
+				dy = -self.speed
+				self.direction = "back"
+			elif received_keys.get('s', False):
+				dy = self.speed
+				self.direction = "front"
+			
+			if received_keys.get('a', False):
+				dx = -self.speed
+				self.direction = "left"
+			elif received_keys.get('d', False):
+				dx = self.speed
+				self.direction = "right"
+		else:
+			# Host player - use actual input
+			keys = pygame.key.get_pressed()
+			
+			# Vertical movement
+			if keys[pygame.K_w]:
+				dy = -self.speed
+				self.direction = "back"
+			elif keys[pygame.K_s]:
+				dy = self.speed
+				self.direction = "front"
+			
+			# Horizontal movement
+			if keys[pygame.K_a]:
+				dx = -self.speed
+				self.direction = "left"
+			elif keys[pygame.K_d]:
+				dx = self.speed
+				self.direction = "right"
 			
 		# Update sprite to match direction
 		self.current_sprite = self.sprites[self.direction]
