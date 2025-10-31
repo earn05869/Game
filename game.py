@@ -64,6 +64,8 @@ class Game:
 		self.other_player_pos = {'x': 0, 'y': 0}  # Other player's position
 		self.other_player_sprite = None  # Other player's visual representation
 		self.game_started = False  # Prevent starting game multiple times
+		# Broadcast inactive dialogue state for a few frames after close (host reliability)
+		self.dialog_end_broadcast_frames = 0
 		
 		# Queue for key events to send to join player
 		self.pending_key_events = []
@@ -282,6 +284,8 @@ class Game:
 										'is_typing': False
 									}
 									self.network.send_dialogue_state(dialog_state)
+									# Keep sending inactive state for a short window in case of packet loss
+									self.dialog_end_broadcast_frames = 30  # ~0.5s at 60 FPS
 
 					# --- During gameplay: interact with objects ---
 					elif self.state == GameConfig.STATE_PLAYING:
@@ -441,15 +445,25 @@ class Game:
 		# Sync dialogue state between host and join
 		if self.network and self.network.is_connected():
 			if self.player_role == 'shion':
-				# Host: Send dialogue state to join player every frame when active
-				if self.dialog_system.is_active:
-					dialog_state = {
-						'is_active': True,
-						'script_id': getattr(self.dialog_system, 'active_script_id', None),
-						'line_index': getattr(self.dialog_system, 'current_line_index', -1),
-						'is_typing': getattr(self.dialog_system, 'is_typing', False)
-					}
-					self.network.send_dialogue_state(dialog_state)
+					# Host: Send dialogue state to join player every frame when active
+					if self.dialog_system.is_active:
+						dialog_state = {
+							'is_active': True,
+							'script_id': getattr(self.dialog_system, 'active_script_id', None),
+							'line_index': getattr(self.dialog_system, 'current_line_index', -1),
+							'is_typing': getattr(self.dialog_system, 'is_typing', False)
+						}
+						self.network.send_dialogue_state(dialog_state)
+					# After dialogue closes, continue sending inactive state briefly for reliability
+					elif self.dialog_end_broadcast_frames > 0:
+						dialog_state = {
+							'is_active': False,
+							'script_id': None,
+							'line_index': -1,
+							'is_typing': False
+						}
+						self.network.send_dialogue_state(dialog_state)
+						self.dialog_end_broadcast_frames -= 1
 			elif self.player_role == 'shione':
 				# Join: Sync dialogue state from host
 				received_state = self.network.get_received_dialogue_state()
