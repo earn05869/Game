@@ -60,6 +60,8 @@ def handle_client(client_socket, addr, player_id):
 				# Handle position update
 				if msg_type == 'position' or 'x' in msg_data:
 					pos_data = {'x': msg_data.get('x', 0), 'y': msg_data.get('y', 0)}
+					if 'dir' in msg_data:
+						pos_data['dir'] = msg_data['dir']
 					
 					# Update player position in shared state
 					with lock:

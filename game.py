@@ -73,6 +73,8 @@ class Game:
 		self.game_started = False  # Prevent starting game multiple times
 		# Broadcast inactive dialogue state for a few frames after close (host reliability)
 		self.dialog_end_broadcast_frames = 0
+		# Other player's facing direction (from host)
+		self.other_player_dir = 'front'
 		
 		# Queue for key events to send to join player
 		self.pending_key_events = []
@@ -143,6 +145,9 @@ class Game:
 		
 		if pid and pid != self.player_id:
 			self.other_player_pos = pos
+			# Save direction if provided
+			if 'dir' in pos:
+				self.other_player_dir = pos['dir']
 	
 	def _on_key_event(self, event_data: dict):
 		"""Called when we receive key event from host (for join player)."""
@@ -543,9 +548,13 @@ class Game:
 			if self.network and self.network.is_connected():
 				# Host sends position, join receives it and follows
 				if self.player_role == 'shion':
+					# Include facing direction from PlayerController
+					pc = self.player_go.get_component(PlayerController)
+					dir_val = getattr(pc, 'direction', None) if pc else None
 					self.network.send_position(
 						self.player_transform.rect.centerx,
-						self.player_transform.rect.centery
+						self.player_transform.rect.centery,
+						dir_val
 					)
 				# Join player doesn't send position - they use host's position
 				elif self.player_role == 'shione':

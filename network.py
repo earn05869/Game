@@ -99,15 +99,18 @@ class NetworkClient:
 		
 		print("[NETWORK] Disconnected from server")
 	
-	def send_position(self, x: float, y: float):
+	def send_position(self, x: float, y: float, direction: str | None = None):
 		"""
-		Send current position to server.
+		Send current position (and optional facing direction) to server.
 		"""
 		if not self.connected or not self.socket:
 			return
 		
 		try:
-			message = json.dumps({'type': 'position', 'x': x, 'y': y})
+			payload = {'type': 'position', 'x': x, 'y': y}
+			if direction:
+				payload['dir'] = direction
+			message = json.dumps(payload)
 			self.socket.sendall(message.encode('utf-8'))
 		except Exception as e:
 			print(f"[NETWORK] Failed to send position: {e}")

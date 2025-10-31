@@ -470,6 +470,11 @@ class PlayerController(Component):
 				self.transform.rect.centerx = target_pos[0]
 				self.transform.rect.centery = target_pos[1]
 				dx, dy = 0, 0
+
+			# Force direction to match host direction exactly when provided
+			host_dir = getattr(game, 'other_player_dir', None)
+			if host_dir in ("front", "back", "left", "right"):
+				self.direction = host_dir
 		
 		# If role is not set or network not available, no movement
 		else:
