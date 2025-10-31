@@ -36,8 +36,8 @@ class Game:
 		self.fade_alpha = 255  # Start with black screen
 
 		# ===== SHION DARK OVERLAY =====
-		self.shion_dark_surface = pygame.Surface((GameConfig.SCREEN_WIDTH, GameConfig.SCREEN_HEIGHT))
-		self.shion_dark_surface.fill((0, 0, 0))
+		# Use per-pixel alpha so we can cut a transparent hole around the player
+		self.shion_dark_surface = pygame.Surface((GameConfig.SCREEN_WIDTH, GameConfig.SCREEN_HEIGHT), pygame.SRCALPHA)
 
 		# ===== LOAD CHARACTER PORTRAITS =====
 		self.character_portraits: Dict[str, pygame.Surface] = {}
@@ -615,8 +615,13 @@ class Game:
 		# ===== 3.5 DRAW SHION DARK OVERLAY =====
 		# Only the host (shion) sees a darker map view during gameplay/dialogue
 		if self.player_role == 'shion' and self.state in (GameConfig.STATE_PLAYING, GameConfig.STATE_DIALOGUE):
-			# Semi-transparent black overlay
-			self.shion_dark_surface.set_alpha(120)
+			# Rebuild overlay each frame: dark fill + transparent circle at player
+			alpha_value = 200  # user-tuned darkness
+			self.shion_dark_surface.fill((0, 0, 0, alpha_value))
+			# Player is rendered centered on screen in this project; cut a hole there
+			player_screen_center = (GameConfig.SCREEN_WIDTH // 2, GameConfig.SCREEN_HEIGHT // 2)
+			spot_radius = 140
+			pygame.draw.circle(self.shion_dark_surface, (0, 0, 0, 0), player_screen_center, spot_radius)
 			self.screen.blit(self.shion_dark_surface, (0, 0))
 		
 		# ===== 4. DRAW FADE OVERLAY =====
