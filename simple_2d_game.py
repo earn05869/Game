@@ -438,20 +438,30 @@ class PlayerController(Component):
 		# Join player (shione) - MUST use input from host via network
 		elif player_role == 'shione' and game.network:
 			received_keys = game.network.get_received_input_keys()
-			# Use received input keys from host
+			# Use received input keys from host with smoothing
+			# Handle vertical movement
 			if received_keys.get('w', False):
 				dy = -self.speed
 				self.direction = "back"
 			elif received_keys.get('s', False):
 				dy = self.speed
 				self.direction = "front"
+			else:
+				dy = 0
 			
+			# Handle horizontal movement
 			if received_keys.get('a', False):
 				dx = -self.speed
 				self.direction = "left"
 			elif received_keys.get('d', False):
 				dx = self.speed
 				self.direction = "right"
+			else:
+				dx = 0
+			
+			# If no input received, stop movement (smooth stop)
+			if not any(received_keys.get(k, False) for k in ['w', 'a', 's', 'd']):
+				dx, dy = 0, 0
 		
 		# If role is not set or network not available, no movement
 		else:
@@ -1034,6 +1044,7 @@ class DialogSystem:
 		
 		# Load the requested script (or default if not found)
 		self.active_script = self.scripts.get(script_id, self.scripts["default"])
+		self.active_script_id = script_id  # Store script ID for sync
 		self.is_active = True
 		self.current_line_index = -1
 		self._next_line_internal()

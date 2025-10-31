@@ -271,6 +271,15 @@ class Game:
 						if not self.dialog_system.is_active:
 							if self.state == GameConfig.STATE_DIALOGUE:
 								self.state = GameConfig.STATE_PLAYING
+								# Notify join player that dialogue ended
+								if self.network and self.network.is_connected() and self.player_role == 'shion':
+									dialog_state = {
+										'is_active': False,
+										'script_id': None,
+										'line_index': -1,
+										'is_typing': False
+									}
+									self.network.send_dialogue_state(dialog_state)
 
 					# --- During gameplay: interact with objects ---
 					elif self.state == GameConfig.STATE_PLAYING:
@@ -425,6 +434,50 @@ class Game:
 		# ===== UPDATE DIALOGUE SYSTEM =====
 		# Typewriter effect needs to run even during dialogue state
 		self.dialog_system.update(dt_ms)
+		
+		# Sync dialogue state between host and join
+		if self.network and self.network.is_connected():
+			if self.player_role == 'shion':
+				# Host: Send dialogue state to join player every frame when active
+				if self.dialog_system.is_active:
+					dialog_state = {
+						'is_active': True,
+						'script_id': getattr(self.dialog_system, 'active_script_id', None),
+						'line_index': getattr(self.dialog_system, 'current_line_index', -1),
+						'is_typing': getattr(self.dialog_system, 'is_typing', False)
+					}
+					self.network.send_dialogue_state(dialog_state)
+			elif self.player_role == 'shione':
+				# Join: Sync dialogue state from host
+				received_state = self.network.get_received_dialogue_state()
+				if received_state:
+					# Sync dialogue active state
+					if received_state.get('is_active') != self.dialog_system.is_active:
+						if received_state.get('is_active'):
+							# Start dialogue
+							script_id = received_state.get('script_id')
+							if script_id and not self.dialog_system.is_active:
+								self.dialog_system.start_conversation(script_id)
+								self.state = GameConfig.STATE_DIALOGUE
+						else:
+							# End dialogue
+							if self.dialog_system.is_active:
+								self.dialog_system.is_active = False
+								if self.state == GameConfig.STATE_DIALOGUE:
+									self.state = GameConfig.STATE_PLAYING
+					
+					# Sync line index if dialogue is active
+					if received_state.get('is_active') and self.dialog_system.is_active:
+						target_line = received_state.get('line_index', -1)
+						current_line = getattr(self.dialog_system, 'current_line_index', -1)
+						# Only sync if we're behind (don't skip ahead)
+						if target_line > current_line:
+							# Advance to target line
+							for _ in range(target_line - current_line):
+								if self.dialog_system.is_active:
+									self.dialog_system.next_line()
+								else:
+									break
 
 		# ===== STATE: PLAYING (Normal gameplay) =====
 		if self.state == GameConfig.STATE_PLAYING:

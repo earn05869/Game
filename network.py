@@ -42,6 +42,9 @@ class NetworkClient:
 		
 		# Queue for received key events
 		self.received_key_events = []
+		
+		# Received dialogue state (for join player)
+		self.received_dialogue_state = None
 	
 	def connect(self) -> bool:
 		"""
@@ -168,6 +171,9 @@ class NetworkClient:
 					self.received_key_events.append(event_data)
 					if self.on_key_event:
 						self.on_key_event(event_data)
+				# Check if it's a dialogue state update
+				elif message.get('type') == 'dialogue_state':
+					self.received_dialogue_state = message.get('state', {})
 				# Check if it's an input update
 				elif message.get('type') == 'input':
 					self.received_input_keys = message.get('keys', {})
@@ -215,6 +221,22 @@ class NetworkClient:
 		events = self.received_key_events.copy()
 		self.received_key_events.clear()
 		return events
+	
+	def send_dialogue_state(self, state: dict):
+		"""Send dialogue state to server (host only)."""
+		if not self.connected or not self.socket:
+			return
+		
+		try:
+			message = json.dumps({'type': 'dialogue_state', 'state': state})
+			self.socket.sendall(message.encode('utf-8'))
+		except Exception as e:
+			print(f"[NETWORK] Failed to send dialogue state: {e}")
+			self.connected = False
+	
+	def get_received_dialogue_state(self) -> dict:
+		"""Get the latest received dialogue state (for join player)."""
+		return self.received_dialogue_state
 	
 	def is_connected(self) -> bool:
 		"""Check if still connected to server."""

@@ -75,6 +75,12 @@ def handle_client(client_socket, addr, player_id):
 					# Forward key event to join player (player 2)
 					broadcast_key_event(event_data)
 				
+				# Handle dialogue state (only from host/player 1)
+				elif msg_type == 'dialogue_state' and player_id == 1:
+					dialog_state = msg_data.get('state', {})
+					# Forward dialogue state to join player (player 2)
+					broadcast_dialogue_state(dialog_state)
+				
 				# Handle input update (only from host/player 1)
 				elif msg_type == 'input' and player_id == 1:
 					input_keys = msg_data.get('keys', {})
@@ -130,6 +136,22 @@ def broadcast_key_event(event_data: dict):
 				connected_players[2]['socket'].sendall(message.encode('utf-8'))
 			except Exception as e:
 				print(f"[SERVER] Failed to send key event to player 2: {e}")
+
+def broadcast_dialogue_state(dialog_state: dict):
+	"""
+	Broadcast dialogue state from host to join player.
+	"""
+	with lock:
+		# Only send to player 2 (join player)
+		if 2 in connected_players:
+			try:
+				message = json.dumps({
+					'type': 'dialogue_state',
+					'state': dialog_state
+				})
+				connected_players[2]['socket'].sendall(message.encode('utf-8'))
+			except Exception as e:
+				print(f"[SERVER] Failed to send dialogue state to player 2: {e}")
 
 def broadcast_input(input_keys: dict):
 	"""
