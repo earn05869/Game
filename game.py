@@ -97,8 +97,9 @@ class Game:
 	
 	def _on_server_ready(self):
 		"""Called when server sends ready signal (both players connected)."""
-		print("[GAME] Server ready! Starting game...")
-		self._start_game()
+		# This callback is called from network thread
+		# The actual game start will be handled in update() loop
+		print("[GAME] Received ready signal from server")
 	
 	def _on_position_update(self, message: dict):
 		"""Called when we receive position update from other player."""
@@ -313,8 +314,11 @@ class Game:
 			return
 		
 		# ===== STATE: WAITING =====
-		# Do nothing - wait for server ready callback to trigger _start_game()
+		# Check if server is ready and start game
 		if self.state == GameConfig.STATE_WAITING:
+			if self.network and self.network.is_ready():
+				print("[GAME] Server ready! Starting game...")
+				self._start_game()
 			return
 		
 		# ===== STATE: FADING OUT (Before teleport) =====
