@@ -407,31 +407,16 @@ class PlayerController(Component):
 			return
 			
 		# ===== INPUT HANDLING =====
-		# Check player role - join player uses network input
+		# Check player role - only host (shion) can use input directly
+		# Join player (shione) must use input from host through network
 		game = self.scene.game
 		player_role = getattr(game, 'player_role', None)
 		
 		dx, dy = 0, 0
 		
-		# If join player, use input from network
-		if player_role == 'shione' and game.network:
-			received_keys = game.network.get_received_input_keys()
-			# Use received input keys
-			if received_keys.get('w', False):
-				dy = -self.speed
-				self.direction = "back"
-			elif received_keys.get('s', False):
-				dy = self.speed
-				self.direction = "front"
-			
-			if received_keys.get('a', False):
-				dx = -self.speed
-				self.direction = "left"
-			elif received_keys.get('d', False):
-				dx = self.speed
-				self.direction = "right"
-		else:
-			# Host player - use actual input
+		# Only host (shion) can use keyboard input directly
+		if player_role == 'shion':
+			# Host player - use actual keyboard input
 			keys = pygame.key.get_pressed()
 			
 			# Vertical movement
@@ -449,6 +434,29 @@ class PlayerController(Component):
 			elif keys[pygame.K_d]:
 				dx = self.speed
 				self.direction = "right"
+		
+		# Join player (shione) - MUST use input from host via network
+		elif player_role == 'shione' and game.network:
+			received_keys = game.network.get_received_input_keys()
+			# Use received input keys from host
+			if received_keys.get('w', False):
+				dy = -self.speed
+				self.direction = "back"
+			elif received_keys.get('s', False):
+				dy = self.speed
+				self.direction = "front"
+			
+			if received_keys.get('a', False):
+				dx = -self.speed
+				self.direction = "left"
+			elif received_keys.get('d', False):
+				dx = self.speed
+				self.direction = "right"
+		
+		# If role is not set or network not available, no movement
+		else:
+			# No input - player cannot move
+			pass
 			
 		# Update sprite to match direction
 		self.current_sprite = self.sprites[self.direction]

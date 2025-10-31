@@ -69,6 +69,12 @@ def handle_client(client_socket, addr, player_id):
 					# Broadcast to all other players
 					broadcast_position(player_id, pos_data)
 				
+				# Handle key event (only from host/player 1)
+				elif msg_type == 'key_event' and player_id == 1:
+					event_data = msg_data.get('event', {})
+					# Forward key event to join player (player 2)
+					broadcast_key_event(event_data)
+				
 				# Handle input update (only from host/player 1)
 				elif msg_type == 'input' and player_id == 1:
 					input_keys = msg_data.get('keys', {})
@@ -108,6 +114,22 @@ def broadcast_position(sender_id: int, position: dict):
 					player_data['socket'].sendall(message.encode('utf-8'))
 				except Exception as e:
 					print(f"[SERVER] Failed to send to player {pid}: {e}")
+
+def broadcast_key_event(event_data: dict):
+	"""
+	Broadcast key event from host to join player (for synchronized input).
+	"""
+	with lock:
+		# Only send to player 2 (join player)
+		if 2 in connected_players:
+			try:
+				message = json.dumps({
+					'type': 'key_event',
+					'event': event_data
+				})
+				connected_players[2]['socket'].sendall(message.encode('utf-8'))
+			except Exception as e:
+				print(f"[SERVER] Failed to send key event to player 2: {e}")
 
 def broadcast_input(input_keys: dict):
 	"""

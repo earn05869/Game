@@ -64,6 +64,9 @@ class Game:
 		self.other_player_pos = {'x': 0, 'y': 0}  # Other player's position
 		self.other_player_sprite = None  # Other player's visual representation
 		self.game_started = False  # Prevent starting game multiple times
+		
+		# Queue for key events to send to join player
+		self.pending_key_events = []
 
 		# ===== SCENE & PLAYER REFERENCES =====
 		self.scene: Optional[Scene] = None
@@ -88,6 +91,7 @@ class Game:
 			# Set callbacks
 			self.network.set_position_callback(self._on_position_update)
 			self.network.set_ready_callback(self._on_server_ready)
+			self.network.set_key_event_callback(self._on_key_event)
 			
 			return True
 		else:
@@ -108,6 +112,12 @@ class Game:
 		
 		if pid and pid != self.player_id:
 			self.other_player_pos = pos
+	
+	def _on_key_event(self, event_data: dict):
+		"""Called when we receive key event from host (for join player)."""
+		# Process key event immediately for synchronized input
+		if self.player_role == 'shione':
+			self._process_received_key_event(event_data)
 	
 	def _start_game(self):
 		"""Start the game from home screen."""
@@ -232,11 +242,19 @@ class Game:
 				continue
 			
 			# ===== BLOCK INPUT FOR JOIN PLAYER =====
-			# Join player should not process any input except QUIT
+			# IMPORTANT: Join player (shione) cannot use any input
+			# They must use input from host (shion) through network
+			# Only allow QUIT event for joining player
 			if self.player_role == 'shione' and self.state != GameConfig.STATE_HOME:
 				continue
 			
 			if event.type == pygame.KEYDOWN:
+				
+				# Host: Send key event to server immediately for join player
+				if self.player_role == 'shion' and self.network and self.network.is_connected():
+					key_name = self._key_to_name(event.key)
+					if key_name:
+						self.network.send_input_event({'type': 'KEYDOWN', 'key': key_name})
 				
 				# ===== E KEY: DIALOGUE & INTERACTION =====
 				if event.key == pygame.K_e:
@@ -248,7 +266,7 @@ class Game:
 						# Handle any event triggered by dialogue
 						if triggered_event:
 							self.handle_dialogue_event(triggered_event)
-							
+						
 						# Check if dialogue ended
 						if not self.dialog_system.is_active:
 							if self.state == GameConfig.STATE_DIALOGUE:
@@ -273,7 +291,7 @@ class Game:
 							door_comp = game_object.get_component(Door)
 							if door_comp:
 								door_comp.toggle()
-								
+							
 							# Priority 3: Generic interactable (start dialogue)
 							interact_comp = game_object.get_component(Interactable)
 							if interact_comp:
@@ -283,6 +301,64 @@ class Game:
 									self.state = GameConfig.STATE_DIALOGUE
 		
 		return True
+	
+	def _key_to_name(self, key_code):
+		"""Convert pygame key code to string name."""
+		key_map = {
+			pygame.K_w: 'w',
+			pygame.K_a: 'a',
+			pygame.K_s: 's',
+			pygame.K_d: 'd',
+			pygame.K_e: 'e',
+		}
+		return key_map.get(key_code)
+	
+	def _process_received_key_event(self, event_data: dict):
+		"""Process received key event from host (for join player)."""
+		if event_data.get('type') == 'KEYDOWN':
+			key_name = event_data.get('key')
+			
+			if key_name == 'e':
+				# Process E key event
+				# --- During dialogue: advance text ---
+				if self.state == GameConfig.STATE_DIALOGUE:
+					triggered_event = self.dialog_system.next_line()
+					
+					# Handle any event triggered by dialogue
+					if triggered_event:
+						self.handle_dialogue_event(triggered_event)
+					
+					# Check if dialogue ended
+					if not self.dialog_system.is_active:
+						if self.state == GameConfig.STATE_DIALOGUE:
+							self.state = GameConfig.STATE_PLAYING
+
+				# --- During gameplay: interact with objects ---
+				elif self.state == GameConfig.STATE_PLAYING:
+					if self.current_interaction_target:
+						game_object = self.current_interaction_target.game_object
+
+						# Priority 1: Teleport (scene transition)
+						teleport_comp = game_object.get_component(Teleport)
+						if teleport_comp:
+							# Start fade out
+							self.state = GameConfig.STATE_FADING_OUT
+							self.fade_alpha = 0
+							self.teleport_target_map = teleport_comp.target_map
+							self.teleport_target_spawn = teleport_comp.target_spawn_point
+
+						# Priority 2: Door toggle
+						door_comp = game_object.get_component(Door)
+						if door_comp:
+							door_comp.toggle()
+						
+						# Priority 3: Generic interactable (start dialogue)
+						interact_comp = game_object.get_component(Interactable)
+						if interact_comp:
+							# Dialogue script ID = object name
+							self.dialog_system.start_conversation(interact_comp.name)
+							if self.dialog_system.is_active:
+								self.state = GameConfig.STATE_DIALOGUE
 	
 	def handle_dialogue_event(self, event: str):
 		"""
@@ -349,24 +425,6 @@ class Game:
 		# ===== UPDATE DIALOGUE SYSTEM =====
 		# Typewriter effect needs to run even during dialogue state
 		self.dialog_system.update(dt_ms)
-		
-		# Join player: Handle E key for dialogue advance from received input
-		if self.player_role == 'shione' and self.state == GameConfig.STATE_DIALOGUE:
-			if self.network and self.network.is_connected():
-				received_keys = self.network.get_received_input_keys()
-				if not hasattr(self, '_last_e_key_state_dialogue'):
-					self._last_e_key_state_dialogue = False
-				
-				current_e_key = received_keys.get('e', False)
-				# Detect E key press for dialogue advance
-				if current_e_key and not self._last_e_key_state_dialogue:
-					triggered_event = self.dialog_system.next_line()
-					if triggered_event:
-						self.handle_dialogue_event(triggered_event)
-					if not self.dialog_system.is_active:
-						self.state = GameConfig.STATE_PLAYING
-				
-				self._last_e_key_state_dialogue = current_e_key
 
 		# ===== STATE: PLAYING (Normal gameplay) =====
 		if self.state == GameConfig.STATE_PLAYING:
@@ -383,7 +441,8 @@ class Game:
 					self.player_transform.rect.centery
 				)
 				
-				# Send input keys from host to server
+				# IMPORTANT: Only host (shion) sends input to server
+				# Join player (shione) cannot send input - must use input from host
 				if self.player_role == 'shion':
 					keys = pygame.key.get_pressed()
 					input_keys = {
@@ -394,42 +453,8 @@ class Game:
 						'e': bool(keys[pygame.K_e])
 					}
 					self.network.send_input(input_keys)
-				
-				# Join player: Handle E key interaction from received input
-				if self.player_role == 'shione':
-					received_keys = self.network.get_received_input_keys()
-					# Store last E key state to detect key down event
-					if not hasattr(self, '_last_e_key_state'):
-						self._last_e_key_state = False
-					
-					current_e_key = received_keys.get('e', False)
-					# Detect E key press (key down event)
-					if current_e_key and not self._last_e_key_state:
-						# Simulate E key interaction
-						if self.current_interaction_target:
-							game_object = self.current_interaction_target.game_object
-							
-							# Priority 1: Teleport
-							teleport_comp = game_object.get_component(Teleport)
-							if teleport_comp:
-								self.state = GameConfig.STATE_FADING_OUT
-								self.fade_alpha = 0
-								self.teleport_target_map = teleport_comp.target_map
-								self.teleport_target_spawn = teleport_comp.target_spawn_point
-							
-							# Priority 2: Door toggle
-							door_comp = game_object.get_component(Door)
-							if door_comp:
-								door_comp.toggle()
-							
-							# Priority 3: Dialogue
-							interact_comp = game_object.get_component(Interactable)
-							if interact_comp:
-								self.dialog_system.start_conversation(interact_comp.name)
-								if self.dialog_system.is_active:
-									self.state = GameConfig.STATE_DIALOGUE
-					
-					self._last_e_key_state = current_e_key
+				# Join player does NOT send input - they receive it from host
+				# Key events are handled immediately via _on_key_event callback
 			
 			# Update camera to follow player
 			self.camera.update(self.player_transform.rect.center)

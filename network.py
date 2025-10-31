@@ -31,11 +31,17 @@ class NetworkClient:
 		# Callback for when we receive input updates (for join player)
 		self.on_input_update: Optional[Callable] = None
 		
+		# Callback for when we receive key events (for join player)
+		self.on_key_event: Optional[Callable] = None
+		
 		# Flag to track ready state
 		self.server_ready = False
 		
 		# Received input keys (for join player)
 		self.received_input_keys = {}
+		
+		# Queue for received key events
+		self.received_key_events = []
 	
 	def connect(self) -> bool:
 		"""
@@ -119,6 +125,21 @@ class NetworkClient:
 			print(f"[NETWORK] Failed to send input: {e}")
 			self.connected = False
 	
+	def send_input_event(self, event: dict):
+		"""
+		Send key event to server (host only).
+		event: dict like {'type': 'KEYDOWN', 'key': 'e'}
+		"""
+		if not self.connected or not self.socket:
+			return
+		
+		try:
+			message = json.dumps({'type': 'key_event', 'event': event})
+			self.socket.sendall(message.encode('utf-8'))
+		except Exception as e:
+			print(f"[NETWORK] Failed to send key event: {e}")
+			self.connected = False
+	
 	def _receive_loop(self):
 		"""
 		Background thread to receive messages from server.
@@ -141,6 +162,12 @@ class NetworkClient:
 					self.server_ready = True
 					if self.on_ready:
 						self.on_ready()
+				# Check if it's a key event (for synchronized input)
+				elif message.get('type') == 'key_event':
+					event_data = message.get('event', {})
+					self.received_key_events.append(event_data)
+					if self.on_key_event:
+						self.on_key_event(event_data)
 				# Check if it's an input update
 				elif message.get('type') == 'input':
 					self.received_input_keys = message.get('keys', {})
@@ -172,9 +199,22 @@ class NetworkClient:
 		"""
 		self.on_input_update = callback
 	
+	def set_key_event_callback(self, callback: Callable):
+		"""
+		Set callback function to be called when receiving key events.
+		Callback will receive: dict of event like {'type': 'KEYDOWN', 'key': 'e'}
+		"""
+		self.on_key_event = callback
+	
 	def get_received_input_keys(self) -> dict:
 		"""Get the latest received input keys (for join player)."""
 		return self.received_input_keys
+	
+	def pop_received_key_events(self) -> list:
+		"""Get and clear received key events queue."""
+		events = self.received_key_events.copy()
+		self.received_key_events.clear()
+		return events
 	
 	def is_connected(self) -> bool:
 		"""Check if still connected to server."""
