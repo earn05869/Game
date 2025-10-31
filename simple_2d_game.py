@@ -1208,13 +1208,28 @@ class DialogSystem:
 		base_x = self.text_area_rect.x
 		base_y = self.text_area_rect.y
 
+		# Determine if we should obfuscate dialogue for Shion
+		should_obfuscate = False
+		try:
+			role = getattr(self.game, 'player_role', None)
+			speaker_lower = (speaker_name or "").lower()
+			if role == 'shion' and speaker_lower not in ('shion', 'shione'):
+				should_obfuscate = True
+		except Exception:
+			should_obfuscate = False
+
+		def _obfuscate_text(s: str) -> str:
+			# Replace non-whitespace characters with '*', preserve spaces for readability
+			return ''.join(ch if ch.isspace() else '*' for ch in s)
+
 		# --- SHAKE MODE: Draw all text with random offset ---
 		if self.is_shaking:
 			# Pre-render all lines
 			total_height = 0
 			rendered_lines = []
 			for line_string in self.wrapped_lines:
-				line_surface = self.text_font.render(line_string, True, current_text_color)
+				line_to_draw = _obfuscate_text(line_string) if should_obfuscate else line_string
+				line_surface = self.text_font.render(line_to_draw, True, current_text_color)
 				rendered_lines.append(line_surface)
 				total_height += line_surface.get_height() + self.line_spacing
 			if rendered_lines:
@@ -1256,7 +1271,7 @@ class DialogSystem:
 				chars_to_show_total -= chars_on_this_line
 
 				# Render and draw this line
-				line_surface = self.text_font.render(text_to_render, True, current_text_color)
+				line_surface = self.text_font.render(_obfuscate_text(text_to_render) if should_obfuscate else text_to_render, True, current_text_color)
 				screen.blit(line_surface, (base_x, current_y))
 				current_y += line_surface.get_height() + self.line_spacing
 
