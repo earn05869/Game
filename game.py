@@ -116,6 +116,7 @@ class Game:
 	def _on_key_event(self, event_data: dict):
 		"""Called when we receive key event from host (for join player)."""
 		# Process key event immediately for synchronized input
+		# This ensures dialogue advances at the exact same time for both players
 		if self.player_role == 'shione':
 			self._process_received_key_event(event_data)
 	
@@ -250,14 +251,15 @@ class Game:
 			
 			if event.type == pygame.KEYDOWN:
 				
-				# Host: Send key event to server immediately for join player
-				if self.player_role == 'shion' and self.network and self.network.is_connected():
-					key_name = self._key_to_name(event.key)
-					if key_name:
-						self.network.send_input_event({'type': 'KEYDOWN', 'key': key_name})
-				
 				# ===== E KEY: DIALOGUE & INTERACTION =====
 				if event.key == pygame.K_e:
+					
+					# Host: Send key event to server immediately BEFORE processing
+					# This ensures join player advances dialogue at the same time
+					if self.player_role == 'shion' and self.network and self.network.is_connected():
+						key_name = self._key_to_name(event.key)
+						if key_name:
+							self.network.send_input_event({'type': 'KEYDOWN', 'key': key_name})
 					
 					# --- During dialogue: advance text ---
 					if self.state == GameConfig.STATE_DIALOGUE:
@@ -328,9 +330,10 @@ class Game:
 			key_name = event_data.get('key')
 			
 			if key_name == 'e':
-				# Process E key event
+				# Process E key event from host - must be synchronized
 				# --- During dialogue: advance text ---
 				if self.state == GameConfig.STATE_DIALOGUE:
+					# Advance dialogue immediately when host presses E
 					triggered_event = self.dialog_system.next_line()
 					
 					# Handle any event triggered by dialogue
@@ -466,14 +469,17 @@ class Game:
 								if self.state == GameConfig.STATE_DIALOGUE:
 									self.state = GameConfig.STATE_PLAYING
 					
-					# Sync line index if dialogue is active
+					# Sync line index if dialogue is active (only as backup, key events handle sync)
+					# Key events are handled immediately, this is just to catch up if missed
 					if received_state.get('is_active') and self.dialog_system.is_active:
 						target_line = received_state.get('line_index', -1)
 						current_line = getattr(self.dialog_system, 'current_line_index', -1)
-						# Only sync if we're behind (don't skip ahead)
-						if target_line > current_line:
-							# Advance to target line
-							for _ in range(target_line - current_line):
+						# Only sync if we're significantly behind (more than 1 line)
+						# This handles network lag but key events should handle real-time sync
+						if target_line > current_line + 1:
+							# Advance to catch up (but don't skip too many lines)
+							skip_count = min(target_line - current_line - 1, 3)  # Max 3 lines catch up
+							for _ in range(skip_count):
 								if self.dialog_system.is_active:
 									self.dialog_system.next_line()
 								else:
