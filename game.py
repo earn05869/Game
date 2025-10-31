@@ -493,27 +493,16 @@ class Game:
 			# Update all game objects
 			self.scene.update()
 			
-			# Send position and input to server (host only)
+			# Send position to server (host only sends position)
+			# Join player receives position from host and follows it directly
 			if self.network and self.network.is_connected():
-				self.network.send_position(
-					self.player_transform.rect.centerx,
-					self.player_transform.rect.centery
-				)
-				
-				# IMPORTANT: Only host (shion) sends input to server
-				# Join player (shione) cannot send input - must use input from host
+				# Host sends position, join receives it and follows
 				if self.player_role == 'shion':
-					keys = pygame.key.get_pressed()
-					input_keys = {
-						'w': bool(keys[pygame.K_w]),
-						'a': bool(keys[pygame.K_a]),
-						's': bool(keys[pygame.K_s]),
-						'd': bool(keys[pygame.K_d]),
-						'e': bool(keys[pygame.K_e])
-					}
-					self.network.send_input(input_keys)
-				# Join player does NOT send input - they receive it from host
-				# Key events are handled immediately via _on_key_event callback
+					self.network.send_position(
+						self.player_transform.rect.centerx,
+						self.player_transform.rect.centery
+					)
+				# Join player doesn't send position - they use host's position
 			
 			# Update camera to follow player
 			self.camera.update(self.player_transform.rect.center)

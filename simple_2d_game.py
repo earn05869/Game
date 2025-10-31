@@ -408,7 +408,7 @@ class PlayerController(Component):
 			
 		# ===== INPUT HANDLING =====
 		# Check player role - only host (shion) can use input directly
-		# Join player (shione) must use input from host through network
+		# Join player (shione) uses position from host directly
 		game = self.scene.game
 		player_role = getattr(game, 'player_role', None)
 		
@@ -435,32 +435,40 @@ class PlayerController(Component):
 				dx = self.speed
 				self.direction = "right"
 		
-		# Join player (shione) - MUST use input from host via network
+		# Join player (shione) - Use position from host directly
 		elif player_role == 'shione' and game.network:
-			received_keys = game.network.get_received_input_keys()
-			# Use received input keys from host with smoothing
-			# Handle vertical movement
-			if received_keys.get('w', False):
-				dy = -self.speed
-				self.direction = "back"
-			elif received_keys.get('s', False):
-				dy = self.speed
-				self.direction = "front"
-			else:
-				dy = 0
+			# Get host position directly
+			host_pos = game.other_player_pos
+			current_pos = (self.transform.rect.centerx, self.transform.rect.centery)
+			target_pos = (host_pos.get('x', current_pos[0]), host_pos.get('y', current_pos[1]))
 			
-			# Handle horizontal movement
-			if received_keys.get('a', False):
-				dx = -self.speed
-				self.direction = "left"
-			elif received_keys.get('d', False):
-				dx = self.speed
-				self.direction = "right"
-			else:
-				dx = 0
+			# Calculate direction based on position difference
+			pos_diff_x = target_pos[0] - current_pos[0]
+			pos_diff_y = target_pos[1] - current_pos[1]
 			
-			# If no input received, stop movement (smooth stop)
-			if not any(received_keys.get(k, False) for k in ['w', 'a', 's', 'd']):
+			# Move towards host position
+			if abs(pos_diff_x) > 1 or abs(pos_diff_y) > 1:
+				# Calculate movement direction
+				if abs(pos_diff_x) > abs(pos_diff_y):
+					# Horizontal movement
+					if pos_diff_x > 0:
+						dx = min(self.speed, abs(pos_diff_x))
+						self.direction = "right"
+					else:
+						dx = -min(self.speed, abs(pos_diff_x))
+						self.direction = "left"
+				else:
+					# Vertical movement
+					if pos_diff_y > 0:
+						dy = min(self.speed, abs(pos_diff_y))
+						self.direction = "front"
+					else:
+						dy = -min(self.speed, abs(pos_diff_y))
+						self.direction = "back"
+			else:
+				# Close enough, snap to position
+				self.transform.rect.centerx = target_pos[0]
+				self.transform.rect.centery = target_pos[1]
 				dx, dy = 0, 0
 		
 		# If role is not set or network not available, no movement

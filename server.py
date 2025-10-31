@@ -81,11 +81,8 @@ def handle_client(client_socket, addr, player_id):
 					# Forward dialogue state to join player (player 2)
 					broadcast_dialogue_state(dialog_state)
 				
-				# Handle input update (only from host/player 1)
-				elif msg_type == 'input' and player_id == 1:
-					input_keys = msg_data.get('keys', {})
-					# Forward input to join player (player 2)
-					broadcast_input(input_keys)
+				# Note: Input keys (w/a/s/d) are no longer sent
+				# Join player uses position from host directly
 				
 			except json.JSONDecodeError as e:
 				print(f"[SERVER] Invalid JSON from player {player_id}: {e}")
@@ -153,28 +150,8 @@ def broadcast_dialogue_state(dialog_state: dict):
 			except Exception as e:
 				print(f"[SERVER] Failed to send dialogue state to player 2: {e}")
 
-def broadcast_input(input_keys: dict):
-	"""
-	Broadcast input keys from host to join player.
-	After sending, the input is consumed (no state stored on server).
-	Each frame sends fresh input from host, so no clearing needed.
-	"""
-	with lock:
-		# Only send to player 2 (join player)
-		if 2 in connected_players:
-			try:
-				# Send current input
-				# Server doesn't store input state - it's forwarded immediately
-				# This ensures fresh input every frame from host
-				message = json.dumps({
-					'type': 'input',
-					'keys': input_keys
-				})
-				connected_players[2]['socket'].sendall(message.encode('utf-8'))
-				# Input is cleared automatically since server doesn't cache it
-				# Each frame receives new input from host
-			except Exception as e:
-				print(f"[SERVER] Failed to send input to player 2: {e}")
+# broadcast_input removed - join player now uses position from host directly
+# No need to send input keys (w/a/s/d) anymore
 
 def get_all_positions() -> dict:
 	"""Get all player positions for initial sync."""
