@@ -1122,17 +1122,15 @@ class DialogSystem:
 				print(f"Warning: Portrait '{portrait_key}' not found")
 
 		# ===== SETUP DISPLAY MODE =====
+		# Remove typewriter delay: always show full text immediately
+		self.current_char_index = len(self.full_text_content)
+		self.is_typing = False
+		# Keep shake effect only if explicitly requested
 		if self.current_line_data.instant_shake:
-			# Show all text immediately and start shake
-			self.current_char_index = len(self.full_text_content)
-			self.is_typing = False
 			self.is_shaking = True
 			self.shake_frames_left = self.SHAKE_DURATION_FRAMES
 		else:
-			# Start typewriter effect
-			self.current_char_index = 0
-			self.text_timer = 0
-			self.is_typing = True
+			self.is_shaking = False
 
 	def end_conversation(self):
 		"""Clean up and exit dialogue mode."""
@@ -1163,19 +1161,10 @@ class DialogSystem:
 				self.is_shaking = False
 			return  # Don't do typewriter during shake
 
-		# ===== UPDATE TYPEWRITER EFFECT =====
-		if self.is_active and self.is_typing:
-			self.text_timer += dt_ms
-
-			# Add characters based on accumulated time
-			while self.text_timer >= self.text_speed and self.is_typing:
-				self.text_timer -= self.text_speed
-				self.current_char_index += 1
-				
-				# Check if we've shown all characters
-				if self.current_char_index >= len(self.full_text_content):
-					self.is_typing = False
-					self.current_char_index = len(self.full_text_content)
+		# ===== UPDATE TYPEWRITER EFFECT (disabled: show full text instantly) =====
+		if self.is_active:
+			self.is_typing = False
+			self.current_char_index = len(self.full_text_content)
 
 	def draw(self, screen: pygame.Surface) -> None:
 		"""
