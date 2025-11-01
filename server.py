@@ -38,6 +38,9 @@ def handle_client(client_socket, addr, player_id):
 	
 	print(f"[SERVER] Player {player_id} ({addr}) connected")
 	
+	# Buffer to accumulate partial messages
+	buffer = ""
+	
 	try:
 		while True:
 			data = client_socket.recv(1024)
@@ -45,60 +48,75 @@ def handle_client(client_socket, addr, player_id):
 				print(f"[SERVER] Player {player_id} disconnected (no data)")
 				break
 			
-			try:
-				message = data.decode('utf-8').strip()
-				
-				# Check for quit command
-				if message.lower() == "quit" or message == "":
-					print(f"[SERVER] Player {player_id} requested disconnect")
+			# Decode and add to buffer
+			buffer += data.decode('utf-8')
+			
+			# Process complete messages (split by newline or process complete JSON)
+			while buffer:
+				# Try to find a complete JSON message
+				# JSON messages don't have delimiters, so we need to parse incrementally
+				try:
+					# Try to parse JSON from buffer start
+					decoder = json.JSONDecoder()
+					msg_data, idx = decoder.raw_decode(buffer)
+					
+					# Successfully parsed - process this message
+					buffer = buffer[idx:].lstrip()  # Remove processed message
+					
+					# Check for quit command
+					if isinstance(msg_data, str) and msg_data.lower() == "quit":
+						print(f"[SERVER] Player {player_id} requested disconnect")
+						return
+					
+					msg_type = msg_data.get('type') if isinstance(msg_data, dict) else None
+				except (json.JSONDecodeError, ValueError):
+					# Incomplete message - wait for more data
 					break
 				
-				# Parse JSON message
-				msg_data = json.loads(message)
-				msg_type = msg_data.get('type')
-				
-				# Handle position update
-				if msg_type == 'position' or 'x' in msg_data:
-					pos_data = {'x': msg_data.get('x', 0), 'y': msg_data.get('y', 0)}
-					if 'dir' in msg_data:
-						pos_data['dir'] = msg_data['dir']
+				# Process the complete message
+				try:
+					# Handle position update
+					if msg_type == 'position' or (isinstance(msg_data, dict) and 'x' in msg_data):
+						pos_data = {'x': msg_data.get('x', 0), 'y': msg_data.get('y', 0)}
+						if 'dir' in msg_data:
+							pos_data['dir'] = msg_data.get('dir')
+						
+						# Update player position in shared state
+						with lock:
+							if player_id in connected_players:
+								connected_players[player_id]['position'] = pos_data
+						
+						# Broadcast to all other players
+						broadcast_position(player_id, pos_data)
 					
-					# Update player position in shared state
-					with lock:
-						if player_id in connected_players:
-							connected_players[player_id]['position'] = pos_data
+					# Handle key event (only from host/player 1)
+					elif msg_type == 'key_event' and player_id == 1:
+						event_data = msg_data.get('event', {})
+						# Forward key event to join player (player 2)
+						broadcast_key_event(event_data)
 					
-					# Broadcast to all other players
-					broadcast_position(player_id, pos_data)
-				
-				# Handle key event (only from host/player 1)
-				elif msg_type == 'key_event' and player_id == 1:
-					event_data = msg_data.get('event', {})
-					# Forward key event to join player (player 2)
-					broadcast_key_event(event_data)
-				
-				# Handle dialogue state (only from host/player 1)
-				elif msg_type == 'dialogue_state' and player_id == 1:
-					dialog_state = msg_data.get('state', {})
-					# Forward dialogue state to join player (player 2)
-					broadcast_dialogue_state(dialog_state)
-				
-				# Handle teleport (only from host/player 1)
-				elif msg_type == 'teleport' and player_id == 1:
-					teleport_data = {
-						'target_map': msg_data.get('target_map'),
-						'target_spawn': msg_data.get('target_spawn')
-					}
-					# Forward teleport to join player (player 2)
-					broadcast_teleport(teleport_data)
-				
-				# Note: Input keys (w/a/s/d) are no longer sent
-				# Join player uses position from host directly
-				
-			except json.JSONDecodeError as e:
-				print(f"[SERVER] Invalid JSON from player {player_id}: {e}")
-			except Exception as e:
-				print(f"[SERVER] Error handling message from player {player_id}: {e}")
+					# Handle dialogue state (only from host/player 1)
+					elif msg_type == 'dialogue_state' and player_id == 1:
+						dialog_state = msg_data.get('state', {})
+						# Forward dialogue state to join player (player 2)
+						broadcast_dialogue_state(dialog_state)
+					
+					# Handle teleport (only from host/player 1)
+					elif msg_type == 'teleport' and player_id == 1:
+						teleport_data = {
+							'target_map': msg_data.get('target_map'),
+							'target_spawn': msg_data.get('target_spawn')
+						}
+						# Forward teleport to join player (player 2)
+						broadcast_teleport(teleport_data)
+					
+					# Note: Input keys (w/a/s/d) are no longer sent
+					# Join player uses position from host directly
+					
+				except Exception as e:
+					print(f"[SERVER] Error handling message from player {player_id}: {e}")
+					# On error, clear buffer to prevent infinite loop
+					buffer = ""
 	
 	except Exception as e:
 		print(f"[SERVER] Error in player {player_id} thread: {e}")

@@ -992,12 +992,27 @@ class DialogSystem:
 		"closed_door": [DialogueLine(None, "ประตูนี้ปิดอยู่")],
 		"room1_hall": [
 			DialogueLine(
-				"Shione", 
-				"Which book is the most favorite for you?",
+				None, 
+				"ชอบหนังสือเล่มไหนมากที่สุด?",
 				choices=[
 					DialogueChoice("Book 1", event="select_book1", goto_script="book1"),
 					DialogueChoice("Book 2", event="select_book2", goto_script="book2"),
 					DialogueChoice("Book 3", event="select_book3", goto_script="book3"),
+				],
+				portrait_key="shione_neutral"
+			)],
+		"red_hall": [
+			DialogueLine(
+				None,
+				"คุณจะทำลายดวงตาดวงไหน?",
+				choices=[
+					DialogueChoice("น้ำตาล", event="select_brown_eye", goto_script=None),
+					DialogueChoice("แดง", event="select_red_eye", goto_script=None),
+					DialogueChoice("เหลือง", event="select_yellow_eye", goto_script=None),
+					DialogueChoice("ม่วง", event="select_purple_eye", goto_script=None),
+					DialogueChoice("ฟ้า", event="select_cyan_eye", goto_script=None),
+					DialogueChoice("น้ำเงิน", event="select_blue_eye", goto_script=None),
+					DialogueChoice("เขียว", event="select_greee_eye", goto_script=None),
 				],
 				portrait_key="shione_neutral"
 			)],

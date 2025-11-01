@@ -153,6 +153,9 @@ class NetworkClient:
 		"""
 		Background thread to receive messages from server.
 		"""
+		# Buffer to accumulate partial messages
+		buffer = ""
+		
 		while self.listening and self.connected:
 			try:
 				if not self.socket:
@@ -164,40 +167,57 @@ class NetworkClient:
 					self.connected = False
 					break
 				
-				message = json.loads(data.decode('utf-8'))
+				# Decode and add to buffer
+				buffer += data.decode('utf-8')
 				
-				# Check if it's a ready message
-				if message.get('message') == 'ready':
-					self.server_ready = True
-					if self.on_ready:
-						self.on_ready()
-				# Check if it's a key event (for synchronized input)
-				elif message.get('type') == 'key_event':
-					event_data = message.get('event', {})
-					self.received_key_events.append(event_data)
-					if self.on_key_event:
-						self.on_key_event(event_data)
-				# Check if it's a dialogue state update
-				elif message.get('type') == 'dialogue_state':
-					self.received_dialogue_state = message.get('state', {})
-				# Check if it's a teleport update
-				elif message.get('type') == 'teleport':
-					self.received_teleport_data = {
-						'target_map': message.get('target_map'),
-						'target_spawn': message.get('target_spawn')
-					}
-				# Check if it's an input update
-				elif message.get('type') == 'input':
-					self.received_input_keys = message.get('keys', {})
-					if self.on_input_update:
-						self.on_input_update(self.received_input_keys)
-				# Otherwise it's a position update
-				elif message.get('type') == 'position' or 'position' in message:
-					if self.on_position_update:
-						self.on_position_update(message)
+				# Process complete messages
+				while buffer:
+					try:
+						# Try to parse JSON from buffer start
+						decoder = json.JSONDecoder()
+						message, idx = decoder.raw_decode(buffer)
+						
+						# Successfully parsed - process this message
+						buffer = buffer[idx:].lstrip()  # Remove processed message
+						
+						# Check if it's a ready message
+						if message.get('message') == 'ready':
+							self.server_ready = True
+							if self.on_ready:
+								self.on_ready()
+						# Check if it's a key event (for synchronized input)
+						elif message.get('type') == 'key_event':
+							event_data = message.get('event', {})
+							self.received_key_events.append(event_data)
+							if self.on_key_event:
+								self.on_key_event(event_data)
+						# Check if it's a dialogue state update
+						elif message.get('type') == 'dialogue_state':
+							self.received_dialogue_state = message.get('state', {})
+						# Check if it's a teleport update
+						elif message.get('type') == 'teleport':
+							self.received_teleport_data = {
+								'target_map': message.get('target_map'),
+								'target_spawn': message.get('target_spawn')
+							}
+						# Check if it's an input update
+						elif message.get('type') == 'input':
+							self.received_input_keys = message.get('keys', {})
+							if self.on_input_update:
+								self.on_input_update(self.received_input_keys)
+						# Otherwise it's a position update
+						elif message.get('type') == 'position' or 'position' in message:
+							if self.on_position_update:
+								self.on_position_update(message)
+					except (json.JSONDecodeError, ValueError):
+						# Incomplete message - wait for more data
+						break
+					except Exception as e:
+						print(f"[NETWORK] Error processing message: {e}")
+						# On error, clear buffer to prevent infinite loop
+						buffer = ""
+						break
 					
-			except json.JSONDecodeError:
-				continue
 			except Exception as e:
 				print(f"[NETWORK] Receive error: {e}")
 				self.connected = False

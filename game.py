@@ -571,11 +571,26 @@ class Game:
 		"""
 		print(f"[Game Event Triggered]: {event}")
 		
-		if event == "trigger_bed_tutorial":
-			# Chain to another dialogue immediately
-			self.dialog_system.start_conversation("_tutorial_bed")
-			self.state = GameConfig.STATE_DIALOGUE
-			
+		if event == "select_book1":
+			self.game_flags.add("select_book1")
+		elif event == "select_book2":
+			self.game_flags.add("select_book2")
+		elif event == "select_book3":
+			self.game_flags.add("select_book3")
+		elif event == "select_brown_eye":
+			print("select_brown_eye")
+		# elif event == "select_red_eye":
+		# 	kill_end()
+		# elif event == "select_yellow_eye":
+		# 	kill_end()
+		elif event == "select_purple_eye":
+			self.game_flags.add("select_purple_eye")
+		# elif event == "select_cyan_eye":
+		# 	kill_end()
+		# elif event == "select_blue_eye":
+		# 	kill_end()
+		# elif event == "select_greee_eye":
+		# 	kill_end()
 		elif event == "play_dandelion_effect":
 			# Placeholder for visual effect
 			print("--- (Play yellow dandelion particle effect) ---")
@@ -606,6 +621,24 @@ class Game:
 				self._start_game()
 			return
 		
+		# ===== PROCESS RECEIVED TELEPORT DATA (JOIN PLAYER) =====
+		# Handle received teleport data from host (MUST be before state checks to ensure sync)
+		# This allows teleport to work even during dialogue or other states
+		if self.player_role == 'shione' and self.network and self.network.is_connected():
+			teleport_data = self.network.get_received_teleport_data()
+			if teleport_data and teleport_data.get('target_map') and teleport_data.get('target_spawn'):
+				# Always allow teleport, even if we're in dialogue (teleport takes priority)
+				self.state = GameConfig.STATE_FADING_OUT
+				self.fade_alpha = 0
+				self.teleport_target_map = teleport_data.get('target_map')
+				self.teleport_target_spawn = teleport_data.get('target_spawn')
+				# Clear any pending teleport that might have been set
+				self.pending_teleport_map = None
+				self.pending_teleport_spawn = None
+				# End dialogue if active (teleporting takes priority)
+				if self.dialog_system.is_active:
+					self.dialog_system.is_active = False
+
 		# ===== STATE: FADING OUT (Before teleport) =====
 		if self.state == GameConfig.STATE_FADING_OUT:
 			self.fade_alpha += GameConfig.FADE_SPEED
@@ -615,20 +648,6 @@ class Game:
 				self.load_scene(self.teleport_target_map, self.teleport_target_spawn)
 				self.state = GameConfig.STATE_FADING_IN
 			return
-
-		# ===== PROCESS RECEIVED TELEPORT DATA (JOIN PLAYER) =====
-		# Handle received teleport data from host (MUST be before key events to ensure sync)
-		if self.player_role == 'shione' and self.network and self.network.is_connected():
-			teleport_data = self.network.get_received_teleport_data()
-			if teleport_data and teleport_data.get('target_map') and teleport_data.get('target_spawn'):
-				# Start fade out to teleport to the same location as host
-				self.state = GameConfig.STATE_FADING_OUT
-				self.fade_alpha = 0
-				self.teleport_target_map = teleport_data.get('target_map')
-				self.teleport_target_spawn = teleport_data.get('target_spawn')
-				# Clear any pending teleport that might have been set
-				self.pending_teleport_map = None
-				self.pending_teleport_spawn = None
 
 		# ===== PROCESS QUEUED KEY EVENTS (JOIN PLAYER) =====
 		# Handle received key events on the main thread to avoid race conditions
@@ -672,30 +691,31 @@ class Game:
 		# Sync dialogue state between host and join
 		if self.network and self.network.is_connected():
 			if self.player_role == 'shion':
-					# Host: Send dialogue state to join player every frame when active
-					if self.dialog_system.is_active:
-						dialog_state = {
-							'is_active': True,
-							'script_id': getattr(self.dialog_system, 'active_script_id', None),
-							'line_index': getattr(self.dialog_system, 'current_line_index', -1),
-							'is_typing': getattr(self.dialog_system, 'is_typing', False)
-						}
-						self.network.send_dialogue_state(dialog_state)
-					# After dialogue closes, continue sending inactive state briefly for reliability
-					elif self.dialog_end_broadcast_frames > 0:
-						dialog_state = {
-							'is_active': False,
-							'script_id': None,
-							'line_index': -1,
-							'is_typing': False
-						}
-						self.network.send_dialogue_state(dialog_state)
-						self.dialog_end_broadcast_frames -= 1
+				# Host: Send dialogue state to join player every frame when active
+				# Only send if state changed to reduce lag
+				if self.dialog_system.is_active:
+					dialog_state = {
+						'is_active': True,
+						'script_id': getattr(self.dialog_system, 'active_script_id', None),
+						'line_index': getattr(self.dialog_system, 'current_line_index', -1),
+						'is_typing': getattr(self.dialog_system, 'is_typing', False)
+					}
+					self.network.send_dialogue_state(dialog_state)
+				# After dialogue closes, continue sending inactive state briefly for reliability
+				elif self.dialog_end_broadcast_frames > 0:
+					dialog_state = {
+						'is_active': False,
+						'script_id': None,
+						'line_index': -1,
+						'is_typing': False
+					}
+					self.network.send_dialogue_state(dialog_state)
+					self.dialog_end_broadcast_frames -= 1
 			elif self.player_role == 'shione':
 				# Join: Sync dialogue state from host
 				received_state = self.network.get_received_dialogue_state()
 				if received_state:
-					# Sync dialogue active state
+					# Sync dialogue active state first
 					if received_state.get('is_active') != self.dialog_system.is_active:
 						if received_state.get('is_active'):
 							# Start dialogue
@@ -710,21 +730,41 @@ class Game:
 								if self.state == GameConfig.STATE_DIALOGUE:
 									self.state = GameConfig.STATE_PLAYING
 					
-					# Sync line index if dialogue is active (only as backup, key events handle sync)
-					# Key events are handled immediately, this is just to catch up if missed
+					# Check if script_id changed (e.g., from goto_script in choice)
+					# Do this AFTER checking active state to ensure dialogue is active
 					if received_state.get('is_active') and self.dialog_system.is_active:
-						target_line = received_state.get('line_index', -1)
-						current_line = getattr(self.dialog_system, 'current_line_index', -1)
-						# Only sync if we're significantly behind (more than 1 line)
-						# This handles network lag but key events should handle real-time sync
-						if target_line > current_line + 1:
-							# Advance to catch up (but don't skip too many lines)
-							skip_count = min(target_line - current_line - 1, 3)  # Max 3 lines catch up
-							for _ in range(skip_count):
-								if self.dialog_system.is_active:
-									self.dialog_system.next_line()
-								else:
-									break
+						received_script_id = received_state.get('script_id')
+						current_script_id = getattr(self.dialog_system, 'active_script_id', None)
+						if received_script_id and received_script_id != current_script_id:
+							# Script changed - reload it (this happens when goto_script is used)
+							self.dialog_system.active_script = self.dialog_system.scripts.get(received_script_id, self.dialog_system.scripts["default"])
+							self.dialog_system.active_script_id = received_script_id
+							# Set line index to one before target (since _next_line_internal increments it)
+							target_line = received_state.get('line_index', -1)
+							self.dialog_system.current_line_index = target_line - 1
+							# Load the current line (this will increment to target_line and load it)
+							self.dialog_system._next_line_internal()
+					
+					# Sync line index if dialogue is active and in same script (only as backup)
+					# Key events handle real-time sync, this just catches up if missed
+					# Don't sync if we're in different states to prevent lag/leading
+					if received_state.get('is_active') and self.dialog_system.is_active and self.state == GameConfig.STATE_DIALOGUE:
+						received_script_id = received_state.get('script_id')
+						current_script_id = getattr(self.dialog_system, 'active_script_id', None)
+						# Only sync line if we're in the same script
+						if received_script_id == current_script_id:
+							target_line = received_state.get('line_index', -1)
+							current_line = getattr(self.dialog_system, 'current_line_index', -1)
+							# Only sync if we're significantly behind (more than 2 lines to reduce leading)
+							# This handles network lag but key events should handle real-time sync
+							if target_line > current_line + 2:
+								# Advance to catch up (but don't skip too many lines)
+								skip_count = min(target_line - current_line - 2, 2)  # Max 2 lines catch up
+								for _ in range(skip_count):
+									if self.dialog_system.is_active and self.state == GameConfig.STATE_DIALOGUE:
+										self.dialog_system.next_line()
+									else:
+										break
 
 		# ===== STATE: PLAYING (Normal gameplay) =====
 		if self.state == GameConfig.STATE_PLAYING:
