@@ -110,6 +110,13 @@ def handle_client(client_socket, addr, player_id):
 						# Forward teleport to join player (player 2)
 						broadcast_teleport(teleport_data)
 					
+					# Handle exit game (both players can send, exits both)
+					elif msg_type == 'exit_game':
+						print(f"[SERVER] Player {player_id} requested exit game - closing all connections")
+						# Broadcast exit to all players and close connections
+						broadcast_exit_game()
+						return  # Exit this client handler (will close connection)
+					
 					# Note: Input keys (w/a/s/d) are no longer sent
 					# Join player uses position from host directly
 					
@@ -195,6 +202,20 @@ def broadcast_teleport(teleport_data: dict):
 				connected_players[2]['socket'].sendall(message.encode('utf-8'))
 			except Exception as e:
 				print(f"[SERVER] Failed to send teleport to player 2: {e}")
+
+def broadcast_exit_game():
+	"""
+	Broadcast exit game command to all connected players.
+	This will cause both players to exit.
+	"""
+	with lock:
+		for pid, player_data in connected_players.items():
+			try:
+				message = json.dumps({'type': 'exit_game'})
+				player_data['socket'].sendall(message.encode('utf-8'))
+				print(f"[SERVER] Sent exit game command to player {pid}")
+			except Exception as e:
+				print(f"[SERVER] Failed to send exit game to player {pid}: {e}")
 
 # broadcast_input removed - join player now uses position from host directly
 # No need to send input keys (w/a/s/d) anymore

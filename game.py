@@ -598,6 +598,13 @@ class Game:
 		elif event == "play_blue_effect":
 			# Placeholder for visual effect
 			print("--- (Play blue sky visual effect) ---")
+		elif event == "exit_game":
+			# Exit game for both players
+			print("[GAME] Exit game event triggered - sending command to server")
+			if self.network and self.network.is_connected():
+				self.network.send_exit_game()
+			# Set flag to exit on next update
+			self.should_exit = True
 			
 		# Add more events here as needed
 		# elif event == "unlock_door":
@@ -608,6 +615,23 @@ class Game:
 		Update game state every frame.
 		dt_ms: Delta time in milliseconds (for frame-independent timing).
 		"""
+		
+		# ===== CHECK FOR EXIT GAME COMMAND =====
+		# Check if we received exit game command from server (for join player)
+		if self.network and self.network.is_connected():
+			if hasattr(self.network, 'received_exit_game') and self.network.received_exit_game:
+				print("[GAME] Received exit game command from server - exiting")
+				self.should_exit = True
+				self.network.received_exit_game = False  # Reset flag
+		
+		# Check if exit was requested locally (from dialogue event)
+		if hasattr(self, 'should_exit') and self.should_exit:
+			# Exit gracefully
+			print("[GAME] Exiting game...")
+			if self.network:
+				self.network.disconnect()
+			# Signal to main loop to exit
+			sys.exit(0)
 		
 		# ===== STATE: HOME (Do nothing, just wait for button clicks) =====
 		if self.state == GameConfig.STATE_HOME:
