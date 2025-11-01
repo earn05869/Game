@@ -974,15 +974,32 @@ class DialogSystem:
 			DialogueLine("Shione", "ที่นี่เหมือนความฝันเลย มีต้นไม้เหมือนก้อนเมฆ พื้นเหมือนท้องฟ้า แต่อย่าโดนมันหลอกนะ", portrait_key="shione_neutral"),
 			DialogueLine("Shion", "เข้าใจแล้ว", portrait_key="shion_neutral"),
 		],
-		"rabbit": [
-			DialogueLine("Rabbit", "พี่มาทำอะไรที่นี่หรอคะ หนูน่ะไม่อยากให้พี่ออกไปเลย", portrait_key="shione_neutral"),
-			DialogueLine("Shione", "ฉันว่าเราควรจะจัดการนะ", portrait_key="shione_neutral"),
+		"bunny": [
+			DialogueLine("Bunny", "พี่มาทำอะไรที่นี่หรอคะ หนูน่ะไม่อยากให้พี่ออกไปเลย", portrait_key="bunny"),
+			DialogueLine("Shione",
+			"ฉันว่าเราควรจะจัดการนะ",
+			choices=[
+				DialogueChoice("ฆ่า", event="kill_bunny", goto_script=None),
+				DialogueChoice("ไม่ฆ่า", event="exit_bunny", goto_script=None),
+			],
+			portrait_key="shione_neutral"),
 		],
 		"sheep": [
-			DialogueLine("Sheep", "พ....พวกคุณมาทำอะไรที่นี่หรอค่ะ ช่วยฉันด้วย", portrait_key="shione_neutral"),
-			DialogueLine("Shione", "เราควรช่วยเขานะ", portrait_key="shione_neutral"),
+			DialogueLine("Sheep", "พ....พวกคุณมาทำอะไรที่นี่หรอค่ะ ช่วยฉันด้วย", portrait_key="sheep"),
+			DialogueLine("Shione",
+				"เราควรช่วยเขานะ",
+				choices=[
+				DialogueChoice("ช่วย", event="save_sheep", goto_script=None),
+				DialogueChoice("ไม่ช่วย", event="exit_sheep", goto_script=None),
+			],
+			portrait_key="shione_neutral"),
 		],
-		"fish": [DialogueLine("Shione", "เงือกอยู่บนน้ำ มันน่าสงสัยไปแล้วรึเปล่า", portrait_key="shione_neutral")],
+		"fish": [DialogueLine("Shione", "เงือกอยู่บนน้ำ มันน่าสงสัยไปแล้วรึเปล่า",
+			choices=[
+				DialogueChoice("ฆ่า", event="kill_fish", goto_script=None),
+				DialogueChoice("ไม่ฆ่า", event="exit_fish", goto_script=None),
+			],
+			portrait_key="shione_neutral")],
 		"intro yellow": [
 			DialogueLine("Shione", "ห้องนี้เหมือนจะเป็นทางเดินดอกแดนดิไลออนนะ เดินตามที่ฉันบอกนะ", portrait_key="shione_neutral"),
 			DialogueLine("Shion", "เข้าใจแล้ว", portrait_key="shion_neutral"),
