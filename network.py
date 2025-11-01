@@ -45,6 +45,9 @@ class NetworkClient:
 		
 		# Received dialogue state (for join player)
 		self.received_dialogue_state = None
+		
+		# Received teleport data (for join player)
+		self.received_teleport_data = None
 	
 	def connect(self) -> bool:
 		"""
@@ -177,6 +180,12 @@ class NetworkClient:
 				# Check if it's a dialogue state update
 				elif message.get('type') == 'dialogue_state':
 					self.received_dialogue_state = message.get('state', {})
+				# Check if it's a teleport update
+				elif message.get('type') == 'teleport':
+					self.received_teleport_data = {
+						'target_map': message.get('target_map'),
+						'target_spawn': message.get('target_spawn')
+					}
 				# Check if it's an input update
 				elif message.get('type') == 'input':
 					self.received_input_keys = message.get('keys', {})
@@ -253,6 +262,29 @@ class NetworkClient:
 	def get_received_dialogue_state(self) -> dict:
 		"""Get the latest received dialogue state (for join player)."""
 		return self.received_dialogue_state
+	
+	def send_teleport(self, target_map: str, target_spawn: str):
+		"""Send teleport data to server (host only)."""
+		if not self.connected or not self.socket:
+			return
+		
+		try:
+			message = json.dumps({
+				'type': 'teleport',
+				'target_map': target_map,
+				'target_spawn': target_spawn
+			})
+			self.socket.sendall(message.encode('utf-8'))
+		except Exception as e:
+			print(f"[NETWORK] Failed to send teleport: {e}")
+			self.connected = False
+	
+	def get_received_teleport_data(self) -> dict:
+		"""Get the latest received teleport data (for join player)."""
+		data = self.received_teleport_data
+		# Clear after reading to prevent retriggering
+		self.received_teleport_data = None
+		return data
 	
 	def is_connected(self) -> bool:
 		"""Check if still connected to server."""

@@ -83,6 +83,15 @@ def handle_client(client_socket, addr, player_id):
 					# Forward dialogue state to join player (player 2)
 					broadcast_dialogue_state(dialog_state)
 				
+				# Handle teleport (only from host/player 1)
+				elif msg_type == 'teleport' and player_id == 1:
+					teleport_data = {
+						'target_map': msg_data.get('target_map'),
+						'target_spawn': msg_data.get('target_spawn')
+					}
+					# Forward teleport to join player (player 2)
+					broadcast_teleport(teleport_data)
+				
 				# Note: Input keys (w/a/s/d) are no longer sent
 				# Join player uses position from host directly
 				
@@ -151,6 +160,23 @@ def broadcast_dialogue_state(dialog_state: dict):
 				connected_players[2]['socket'].sendall(message.encode('utf-8'))
 			except Exception as e:
 				print(f"[SERVER] Failed to send dialogue state to player 2: {e}")
+
+def broadcast_teleport(teleport_data: dict):
+	"""
+	Broadcast teleport data from host to join player.
+	"""
+	with lock:
+		# Only send to player 2 (join player)
+		if 2 in connected_players:
+			try:
+				message = json.dumps({
+					'type': 'teleport',
+					'target_map': teleport_data.get('target_map'),
+					'target_spawn': teleport_data.get('target_spawn')
+				})
+				connected_players[2]['socket'].sendall(message.encode('utf-8'))
+			except Exception as e:
+				print(f"[SERVER] Failed to send teleport to player 2: {e}")
 
 # broadcast_input removed - join player now uses position from host directly
 # No need to send input keys (w/a/s/d) anymore

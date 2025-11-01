@@ -129,7 +129,7 @@
   </object>
  </objectgroup>
  <objectgroup id="4" name="teleport">
-  <object id="34" name="hall" x="833.221" y="486.352" width="67" height="26.849" rotation="269.881">
+  <object id="34" name="blue_hall" x="833.221" y="486.352" width="67" height="26.849" rotation="269.881">
    <properties>
     <property name="target_map" value="asset/hall/hall.tmx"/>
     <property name="target_spawn_point" value="from_blue"/>

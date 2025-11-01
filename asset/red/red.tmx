@@ -40,7 +40,7 @@
   <object id="21" name="paper" x="302" y="396" width="44" height="48"/>
  </objectgroup>
  <objectgroup id="4" name="teleport">
-  <object id="24" name="hall" x="446" y="273.333" width="48" height="46.6667">
+  <object id="24" name="red_hall" x="446" y="273.333" width="48" height="46.6667">
    <properties>
     <property name="target_map" value="asset/hall/hall.tmx"/>
     <property name="target_spawn_point" value="from_red"/>

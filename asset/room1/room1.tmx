@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="64" tileheight="64" infinite="0" nextlayerid="8" nextobjectid="21">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="8" height="8" tilewidth="64" tileheight="64" infinite="0" nextlayerid="8" nextobjectid="22">
  <tileset firstgid="1" source="room1.tsx"/>
  <layer id="2" name="ground" class="ground" width="8" height="8">
   <data encoding="base64" compression="zlib">
@@ -27,7 +27,7 @@
   <object id="20" name="bed" x="136.75" y="153" width="61" height="123.25"/>
  </objectgroup>
  <objectgroup id="6" name="teleport">
-  <object id="15" x="367.205" y="144.308" width="43.3333" height="34.6667">
+  <object id="15" name="room1_hall" x="367.205" y="144.308" width="43.3333" height="34.6667">
    <properties>
     <property name="target_map" value="asset/hall/hall.tmx"/>
     <property name="target_spawn_point" value="from_room1"/>

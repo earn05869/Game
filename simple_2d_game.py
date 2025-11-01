@@ -17,6 +17,7 @@ import pygame
 import sys
 import random
 import os
+import math
 from pytmx.util_pygame import load_pygame
 from typing import List, Optional, Dict, Type, TypeVar
 
@@ -783,6 +784,29 @@ class Camera:
 # DIALOGUE SYSTEM
 # ============================================================================
 
+class DialogueChoice:
+	"""
+	Represents a single choice option in a choice dialog.
+	
+	Parameters:
+	- text: The choice text displayed to the player
+	- event: Optional event string to trigger when this choice is selected
+	- goto_script: Optional script ID to jump to after selecting this choice
+	- goto_line: Optional line index in goto_script to jump to (None = start of script)
+	"""
+	def __init__(
+		self,
+		text: str,
+		event: Optional[str] = None,
+		goto_script: Optional[str] = None,
+		goto_line: Optional[int] = None
+	):
+		self.text = text
+		self.event = event
+		self.goto_script = goto_script
+		self.goto_line = goto_line
+
+
 class DialogueLine:
 	"""
 	One line of dialogue with all its metadata.
@@ -794,6 +818,7 @@ class DialogueLine:
 	- emotion: Changes text color (neutral/surprise/anger/sadness)
 	- instant_shake: If True, text appears instantly and shakes
 	- portrait_key: Filename (without extension) for character portrait
+	- choices: Optional list of DialogueChoice objects for player choice
 	"""
 	
 	def __init__(
@@ -803,7 +828,8 @@ class DialogueLine:
 		event: Optional[str] = None, 
 		emotion: str = "neutral", 
 		instant_shake: bool = False, 
-		portrait_key: Optional[str] = None
+		portrait_key: Optional[str] = None,
+		choices: Optional[List['DialogueChoice']] = None
 	):
 		# Remove trailing '!' if instant_shake is True (we'll add shake effect instead)
 		self.speaker = speaker
@@ -812,6 +838,7 @@ class DialogueLine:
 		self.emotion = emotion
 		self.instant_shake = instant_shake
 		self.portrait_key = portrait_key  # e.g., "shion_neutral" or "shione_anger"
+		self.choices = choices  # List of DialogueChoice objects, None means regular dialogue line
 
 
 class DialogSystem:
@@ -963,6 +990,17 @@ class DialogSystem:
 		"white": [
 			DialogueLine("Shion", "ฉันมองเห็น", portrait_key="shion_neutral")],
 		"closed_door": [DialogueLine(None, "ประตูนี้ปิดอยู่")],
+		"room1_hall": [
+			DialogueLine(
+				"Shione", 
+				"Which book is the most favorite for you?",
+				choices=[
+					DialogueChoice("Book 1", event="select_book1", goto_script="book1"),
+					DialogueChoice("Book 2", event="select_book2", goto_script="book2"),
+					DialogueChoice("Book 3", event="select_book3", goto_script="book3"),
+				],
+				portrait_key="shione_neutral"
+			)],
 		"default": [DialogueLine(None, "An interesting object.")],
 		}
 
@@ -989,6 +1027,12 @@ class DialogSystem:
 		# ===== PORTRAIT STATE =====
 		self.current_portrait_surface: Optional[pygame.Surface] = None
 		self.portrait_rect = pygame.Rect(0, 0, 0, 0)
+		
+		# ===== CHOICE STATE =====
+		self.is_showing_choices = False
+		self.current_choices: List[DialogueChoice] = []
+		self.selected_choice_index = 0
+		self.choice_animation_timer = 0  # For smooth animations
 
 		# ===== UI RECTANGLES =====
 		# Main dialogue box at bottom of screen
@@ -999,6 +1043,16 @@ class DialogSystem:
 			150
 		)
 		self.text_area_rect = self.dialog_box_rect.inflate(-40, -40)
+		
+		# Choice box positioning (centered on screen)
+		self.choice_box_width = 600
+		self.choice_box_height = 400
+		self.choice_box_rect = pygame.Rect(
+			(GameConfig.SCREEN_WIDTH - self.choice_box_width) // 2,
+			(GameConfig.SCREEN_HEIGHT - self.choice_box_height) // 2,
+			self.choice_box_width,
+			self.choice_box_height
+		)
 
 		# Speaker name box above dialogue box
 		self.speaker_box_rect = pygame.Rect(
@@ -1047,8 +1101,13 @@ class DialogSystem:
 		"""
 		Advance to next dialogue line (called when player presses E).
 		Returns event string if this line triggers an event.
+		Note: This should NOT be called when showing choices - use select_choice() instead.
 		"""
 		if not self.is_active:
+			return None
+		
+		# Don't advance if showing choices
+		if self.is_showing_choices:
 			return None
 		
 		# Don't advance during shake effect
@@ -1071,16 +1130,74 @@ class DialogSystem:
 			self._next_line_internal()
 		
 		return event_to_fire
+	
+	def move_choice_selection(self, direction: str) -> None:
+		"""
+		Move choice selection up/down.
+		direction: 'up' (W) or 'down' (S), 'left' (A) or 'right' (D)
+		"""
+		if not self.is_showing_choices or not self.current_choices:
+			return
+		
+		if direction == 'up' or direction == 'left':
+			self.selected_choice_index = (self.selected_choice_index - 1) % len(self.current_choices)
+		elif direction == 'down' or direction == 'right':
+			self.selected_choice_index = (self.selected_choice_index + 1) % len(self.current_choices)
+		
+		self.choice_animation_timer = 0  # Reset animation
+	
+	def select_choice(self) -> Optional[str]:
+		"""
+		Select the currently highlighted choice.
+		Returns the event string associated with the choice, or None.
+		"""
+		if not self.is_showing_choices or not self.current_choices:
+			return None
+		
+		selected_choice = self.current_choices[self.selected_choice_index]
+		
+		# Handle goto_script if specified
+		if selected_choice.goto_script:
+			# Jump to a different script
+			self.active_script = self.scripts.get(selected_choice.goto_script, self.scripts["default"])
+			self.active_script_id = selected_choice.goto_script
+			self.current_line_index = selected_choice.goto_line if selected_choice.goto_line is not None else -1
+			self._next_line_internal()
+		else:
+			# Continue to next line in current script
+			if self.current_line_index + 1 >= len(self.active_script):
+				self.end_conversation()
+			else:
+				self._next_line_internal()
+		
+		# Clear choice state
+		self.is_showing_choices = False
+		self.current_choices = []
+		
+		# Return event for handling
+		return selected_choice.event
 
 	def _next_line_internal(self):
 		"""
 		Internal: Load next line and setup its display state.
-		Handles typewriter, shake, and portrait setup.
+		Handles typewriter, shake, portrait, and choice setup.
 		"""
 		self.current_line_index += 1
 		self.current_line_data = self.active_script[self.current_line_index]
 
-		# ===== PREPARE TEXT =====
+		# ===== CHECK IF THIS IS A CHOICE LINE =====
+		if self.current_line_data.choices and len(self.current_line_data.choices) > 0:
+			# This is a choice line - show choices instead of text
+			self.is_showing_choices = True
+			self.current_choices = self.current_line_data.choices
+			self.selected_choice_index = 0
+			self.choice_animation_timer = 0
+			# Don't process as regular text
+			return
+
+		# ===== PREPARE TEXT (REGULAR DIALOGUE LINE) =====
+		self.is_showing_choices = False
+		self.current_choices = []
 		self.full_text_content = self.current_line_data.text
 		self.wrapped_lines = self._wrap_text(
 			self.full_text_content,
@@ -1134,12 +1251,23 @@ class DialogSystem:
 		self.is_shaking = False
 		self.shake_frames_left = 0
 		self.current_portrait_surface = None
+		
+		# Reset choice state
+		self.is_showing_choices = False
+		self.current_choices = []
+		self.selected_choice_index = 0
+		self.choice_animation_timer = 0
 
 	def update(self, dt_ms: int):
 		"""
 		Update dialogue effects (called every frame).
 		dt_ms: Delta time in milliseconds since last frame.
 		"""
+		# ===== UPDATE CHOICE ANIMATION =====
+		if self.is_showing_choices:
+			self.choice_animation_timer += dt_ms
+			return
+		
 		# ===== UPDATE SHAKE EFFECT =====
 		if self.is_shaking:
 			self.shake_frames_left -= 1
@@ -1154,11 +1282,19 @@ class DialogSystem:
 
 	def draw(self, screen: pygame.Surface) -> None:
 		"""
-		Render the dialogue box, text, and character portrait.
+		Render the dialogue box, text, character portrait, or choice menu.
 		"""
+		if not self.is_active:
+			return
+		
+		# ===== CHECK IF SHOWING CHOICES =====
+		if self.is_showing_choices:
+			self._draw_choices(screen)
+			return
+		
 		# Copy reference to avoid mid-draw changes from other threads
 		line_data = self.current_line_data
-		if not self.is_active or not line_data:
+		if not line_data:
 			return
 
 		# ===== 1. DRAW CHARACTER PORTRAIT =====
@@ -1271,6 +1407,96 @@ class DialogSystem:
 				self.dialog_box_rect.bottom - self.prompt_text.get_height() - 15
 			)
 			screen.blit(self.prompt_text, prompt_pos)
+	
+	def _draw_choices(self, screen: pygame.Surface) -> None:
+		"""
+		Draw beautiful choice menu UI with WASD navigation indicators.
+		"""
+		if not self.current_choices:
+			return
+		
+		# ===== DRAW SEMI-TRANSPARENT BACKDROP =====
+		backdrop = pygame.Surface((GameConfig.SCREEN_WIDTH, GameConfig.SCREEN_HEIGHT), pygame.SRCALPHA)
+		backdrop.fill((0, 0, 0, 180))  # Dark overlay with transparency
+		screen.blit(backdrop, (0, 0))
+		
+		# ===== DRAW CHOICE BOX BACKGROUND =====
+		# Main box with rounded corners effect (using gradient-like border)
+		box_rect = self.choice_box_rect.copy()
+		
+		# Outer glow effect
+		outer_rect = box_rect.inflate(10, 10)
+		pygame.draw.rect(screen, (100, 150, 255), outer_rect, border_radius=15)
+		
+		# Main box
+		pygame.draw.rect(screen, (20, 20, 30), box_rect, border_radius=10)
+		pygame.draw.rect(screen, (80, 120, 200), box_rect, width=3, border_radius=10)
+		
+		# Inner highlight
+		inner_rect = box_rect.inflate(-8, -8)
+		pygame.draw.rect(screen, (40, 50, 70), inner_rect, border_radius=8)
+		
+		# ===== CALCULATE CHOICE ITEM POSITIONS =====
+		choice_padding = 20
+		choice_height = 70
+		choice_spacing = 15
+		start_y = box_rect.y + 60
+		
+		# Calculate pulse animation for selected item
+		pulse_factor = abs(math.sin(self.choice_animation_timer / 200.0)) * 0.15 + 0.85
+		
+		# ===== DRAW EACH CHOICE =====
+		for i, choice in enumerate(self.current_choices):
+			choice_y = start_y + i * (choice_height + choice_spacing)
+			choice_rect = pygame.Rect(
+				box_rect.x + choice_padding,
+				choice_y,
+				box_rect.width - (choice_padding * 2),
+				choice_height
+			)
+			
+			is_selected = (i == self.selected_choice_index)
+			
+			# ===== CHOICE BOX BACKGROUND =====
+			if is_selected:
+				# Selected choice: brighter with animation
+				selected_bg = (60 + int(30 * pulse_factor), 90 + int(30 * pulse_factor), 150 + int(50 * pulse_factor))
+				pygame.draw.rect(screen, selected_bg, choice_rect, border_radius=8)
+				# Glowing border for selected
+				pygame.draw.rect(screen, (120, 180, 255), choice_rect, width=3, border_radius=8)
+				# Arrow indicator
+				arrow_x = choice_rect.x + 15
+				arrow_y = choice_rect.centery
+				pygame.draw.polygon(screen, (255, 255, 150), [
+					(arrow_x, arrow_y - 8),
+					(arrow_x + 12, arrow_y),
+					(arrow_x, arrow_y + 8)
+				])
+			else:
+				# Unselected choice: darker
+				pygame.draw.rect(screen, (30, 35, 45), choice_rect, border_radius=8)
+				pygame.draw.rect(screen, (60, 80, 100), choice_rect, width=2, border_radius=8)
+			
+			# ===== DRAW CHOICE TEXT =====
+			text_color = (255, 255, 255) if is_selected else (200, 200, 200)
+			text_x = choice_rect.x + (45 if is_selected else 25)
+			text_y = choice_rect.centery - self.text_font.get_height() // 2
+			
+			# Wrap choice text if too long
+			max_text_width = choice_rect.width - (text_x - choice_rect.x) - 20
+			choice_lines = self._wrap_text(choice.text, self.text_font, max_text_width)
+			
+			current_text_y = text_y
+			for line in choice_lines[:2]:  # Max 2 lines per choice
+				text_surface = self.text_font.render(line, True, text_color)
+				screen.blit(text_surface, (text_x, current_text_y))
+				current_text_y += text_surface.get_height() + 3
+		
+		# ===== DRAW NAVIGATION HINTS =====
+		hint_y = box_rect.bottom - 40
+		hint_text = self.speaker_font.render("WASD: Navigate  |  E: Confirm", True, (150, 150, 150))
+		hint_x = box_rect.centerx - hint_text.get_width() // 2
+		screen.blit(hint_text, (hint_x, hint_y))
 
 
 # ============================================================================

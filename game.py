@@ -50,6 +50,11 @@ class Game:
 		# Stores destination when fading out
 		self.teleport_target_map: Optional[str] = None
 		self.teleport_target_spawn: Optional[str] = None
+		
+		# ===== PENDING TELEPORT STATE =====
+		# Stores teleport info when dialog is shown first
+		self.pending_teleport_map: Optional[str] = None
+		self.pending_teleport_spawn: Optional[str] = None
 
 		# ===== GAME SYSTEMS =====
 		self.dialog_system = DialogSystem(self)
@@ -314,6 +319,27 @@ class Game:
 			
 			if event.type == pygame.KEYDOWN:
 				
+				# ===== WASD KEYS: CHOICE NAVIGATION (in dialogue mode) =====
+				if self.state == GameConfig.STATE_DIALOGUE and self.dialog_system.is_showing_choices:
+					# Host: Send key event to server
+					if self.player_role == 'shion' and self.network and self.network.is_connected():
+						key_name = self._key_to_name(event.key)
+						if key_name:
+							self.network.send_input_event({'type': 'KEYDOWN', 'key': key_name})
+					
+					if event.key == pygame.K_w or event.key == pygame.K_UP:
+						self.dialog_system.move_choice_selection('up')
+						continue
+					elif event.key == pygame.K_s or event.key == pygame.K_DOWN:
+						self.dialog_system.move_choice_selection('down')
+						continue
+					elif event.key == pygame.K_a or event.key == pygame.K_LEFT:
+						self.dialog_system.move_choice_selection('left')
+						continue
+					elif event.key == pygame.K_d or event.key == pygame.K_RIGHT:
+						self.dialog_system.move_choice_selection('right')
+						continue
+				
 				# ===== E KEY: DIALOGUE & INTERACTION =====
 				if event.key == pygame.K_e:
 					
@@ -324,18 +350,33 @@ class Game:
 						if key_name:
 							self.network.send_input_event({'type': 'KEYDOWN', 'key': key_name})
 					
-					# --- During dialogue: advance text ---
+					# --- During dialogue: handle choices or advance text ---
 					if self.state == GameConfig.STATE_DIALOGUE:
-						triggered_event = self.dialog_system.next_line()
-						
-						# Handle any event triggered by dialogue
-						if triggered_event:
-							self.handle_dialogue_event(triggered_event)
-						
-						# Check if dialogue ended
-						if not self.dialog_system.is_active:
-							if self.state == GameConfig.STATE_DIALOGUE:
-								self.state = GameConfig.STATE_PLAYING
+						# Check if showing choices
+						if self.dialog_system.is_showing_choices:
+							# E key confirms choice
+							triggered_event = self.dialog_system.select_choice()
+							if triggered_event:
+								self.handle_dialogue_event(triggered_event)
+							# Check if dialogue ended after choice
+							if not self.dialog_system.is_active:
+								if self.state == GameConfig.STATE_DIALOGUE:
+									# Check if there's a pending teleport (from teleport with dialog)
+									if self.pending_teleport_map and self.pending_teleport_spawn:
+										# Teleport automatically after dialog ends
+										self.state = GameConfig.STATE_FADING_OUT
+										self.fade_alpha = 0
+										self.teleport_target_map = self.pending_teleport_map
+										self.teleport_target_spawn = self.pending_teleport_spawn
+										# Send teleport data to server for join player
+										if self.network and self.network.is_connected() and self.player_role == 'shion':
+											self.network.send_teleport(self.teleport_target_map, self.teleport_target_spawn)
+										# Clear pending teleport
+										self.pending_teleport_map = None
+										self.pending_teleport_spawn = None
+									else:
+										# Normal dialog end: return to gameplay
+										self.state = GameConfig.STATE_PLAYING
 								# Notify join player that dialogue ended
 								if self.network and self.network.is_connected() and self.player_role == 'shion':
 									dialog_state = {
@@ -345,8 +386,45 @@ class Game:
 										'is_typing': False
 									}
 									self.network.send_dialogue_state(dialog_state)
-									# Keep sending inactive state for a short window in case of packet loss
-									self.dialog_end_broadcast_frames = 30  # ~0.5s at 60 FPS
+									self.dialog_end_broadcast_frames = 30
+						else:
+							# Regular dialogue: advance text
+							triggered_event = self.dialog_system.next_line()
+							
+							# Handle any event triggered by dialogue
+							if triggered_event:
+								self.handle_dialogue_event(triggered_event)
+							
+							# Check if dialogue ended
+							if not self.dialog_system.is_active:
+								if self.state == GameConfig.STATE_DIALOGUE:
+									# Check if there's a pending teleport (from teleport with dialog)
+									if self.pending_teleport_map and self.pending_teleport_spawn:
+										# Teleport automatically after dialog ends
+										self.state = GameConfig.STATE_FADING_OUT
+										self.fade_alpha = 0
+										self.teleport_target_map = self.pending_teleport_map
+										self.teleport_target_spawn = self.pending_teleport_spawn
+										# Send teleport data to server for join player
+										if self.network and self.network.is_connected() and self.player_role == 'shion':
+											self.network.send_teleport(self.teleport_target_map, self.teleport_target_spawn)
+										# Clear pending teleport
+										self.pending_teleport_map = None
+										self.pending_teleport_spawn = None
+									else:
+										# Normal dialog end: return to gameplay
+										self.state = GameConfig.STATE_PLAYING
+									# Notify join player that dialogue ended
+									if self.network and self.network.is_connected() and self.player_role == 'shion':
+										dialog_state = {
+											'is_active': False,
+											'script_id': None,
+											'line_index': -1,
+											'is_typing': False
+										}
+										self.network.send_dialogue_state(dialog_state)
+										# Keep sending inactive state for a short window in case of packet loss
+										self.dialog_end_broadcast_frames = 30  # ~0.5s at 60 FPS
 
 					# --- During gameplay: interact with objects ---
 					elif self.state == GameConfig.STATE_PLAYING:
@@ -356,11 +434,25 @@ class Game:
 							# Priority 1: Teleport (scene transition)
 							teleport_comp = game_object.get_component(Teleport)
 							if teleport_comp:
-								# Start fade out
-								self.state = GameConfig.STATE_FADING_OUT
-								self.fade_alpha = 0
-								self.teleport_target_map = teleport_comp.target_map
-								self.teleport_target_spawn = teleport_comp.target_spawn_point
+								# Check if dialog script exists for this teleport object
+								script_id = game_object.name
+								if script_id in self.dialog_system.scripts:
+									# Dialog exists: show dialog first, then teleport after
+									self.dialog_system.start_conversation(script_id)
+									if self.dialog_system.is_active:
+										# Store teleport info for after dialog ends
+										self.pending_teleport_map = teleport_comp.target_map
+										self.pending_teleport_spawn = teleport_comp.target_spawn_point
+										self.state = GameConfig.STATE_DIALOGUE
+								else:
+									# No dialog: teleport immediately
+									self.state = GameConfig.STATE_FADING_OUT
+									self.fade_alpha = 0
+									self.teleport_target_map = teleport_comp.target_map
+									self.teleport_target_spawn = teleport_comp.target_spawn_point
+									# Send teleport data to server for join player
+									if self.network and self.network.is_connected() and self.player_role == 'shion':
+										self.network.send_teleport(self.teleport_target_map, self.teleport_target_spawn)
 								return True
 
 							# Next: Generic interactable (start dialogue)
@@ -381,6 +473,10 @@ class Game:
 			pygame.K_s: 's',
 			pygame.K_d: 'd',
 			pygame.K_e: 'e',
+			pygame.K_UP: 'w',
+			pygame.K_LEFT: 'a',
+			pygame.K_DOWN: 's',
+			pygame.K_RIGHT: 'd',
 		}
 		return key_map.get(key_code)
 	
@@ -389,21 +485,63 @@ class Game:
 		if event_data.get('type') == 'KEYDOWN':
 			key_name = event_data.get('key')
 			
+			# Handle WASD for choice navigation (join player)
+			if self.state == GameConfig.STATE_DIALOGUE and self.dialog_system.is_showing_choices:
+				if key_name in ('w', 's', 'a', 'd'):
+					dir_map = {'w': 'up', 's': 'down', 'a': 'left', 'd': 'right'}
+					self.dialog_system.move_choice_selection(dir_map[key_name])
+					return
+			
 			if key_name == 'e':
 				# Process E key event from host - must be synchronized
-				# --- During dialogue: advance text ---
+				# --- During dialogue: handle choices or advance text ---
 				if self.state == GameConfig.STATE_DIALOGUE:
-					# Advance dialogue immediately when host presses E
-					triggered_event = self.dialog_system.next_line()
-					
-					# Handle any event triggered by dialogue
-					if triggered_event:
-						self.handle_dialogue_event(triggered_event)
-					
-					# Check if dialogue ended
-					if not self.dialog_system.is_active:
-						if self.state == GameConfig.STATE_DIALOGUE:
-							self.state = GameConfig.STATE_PLAYING
+					# Check if showing choices
+					if self.dialog_system.is_showing_choices:
+						# E key confirms choice
+						triggered_event = self.dialog_system.select_choice()
+						if triggered_event:
+							self.handle_dialogue_event(triggered_event)
+						# Check if dialogue ended after choice
+						if not self.dialog_system.is_active:
+							if self.state == GameConfig.STATE_DIALOGUE:
+								# Check if there's a pending teleport (from teleport with dialog)
+								if self.pending_teleport_map and self.pending_teleport_spawn:
+									# Teleport automatically after dialog ends
+									self.state = GameConfig.STATE_FADING_OUT
+									self.fade_alpha = 0
+									self.teleport_target_map = self.pending_teleport_map
+									self.teleport_target_spawn = self.pending_teleport_spawn
+									# Clear pending teleport
+									self.pending_teleport_map = None
+									self.pending_teleport_spawn = None
+								else:
+									# Normal dialog end: return to gameplay
+									self.state = GameConfig.STATE_PLAYING
+					else:
+						# Advance dialogue immediately when host presses E
+						triggered_event = self.dialog_system.next_line()
+						
+						# Handle any event triggered by dialogue
+						if triggered_event:
+							self.handle_dialogue_event(triggered_event)
+						
+						# Check if dialogue ended
+						if not self.dialog_system.is_active:
+							if self.state == GameConfig.STATE_DIALOGUE:
+								# Check if there's a pending teleport (from teleport with dialog)
+								if self.pending_teleport_map and self.pending_teleport_spawn:
+									# Teleport automatically after dialog ends
+									self.state = GameConfig.STATE_FADING_OUT
+									self.fade_alpha = 0
+									self.teleport_target_map = self.pending_teleport_map
+									self.teleport_target_spawn = self.pending_teleport_spawn
+									# Clear pending teleport
+									self.pending_teleport_map = None
+									self.pending_teleport_spawn = None
+								else:
+									# Normal dialog end: return to gameplay
+									self.state = GameConfig.STATE_PLAYING
 
 				# --- During gameplay: interact with objects ---
 				elif self.state == GameConfig.STATE_PLAYING:
@@ -413,11 +551,10 @@ class Game:
 						# Priority 1: Teleport (scene transition)
 						teleport_comp = game_object.get_component(Teleport)
 						if teleport_comp:
-							# Start fade out
-							self.state = GameConfig.STATE_FADING_OUT
-							self.fade_alpha = 0
-							self.teleport_target_map = teleport_comp.target_map
-							self.teleport_target_spawn = teleport_comp.target_spawn_point
+							# Join player doesn't initiate teleports - they follow host
+							# But if this happens, it means they're in sync, so allow it
+							# (Host handles teleport initiation)
+							pass
 
 						# Next: Generic interactable (start dialogue)
 						interact_comp = game_object.get_component(Interactable)
@@ -479,8 +616,23 @@ class Game:
 				self.state = GameConfig.STATE_FADING_IN
 			return
 
+		# ===== PROCESS RECEIVED TELEPORT DATA (JOIN PLAYER) =====
+		# Handle received teleport data from host (MUST be before key events to ensure sync)
+		if self.player_role == 'shione' and self.network and self.network.is_connected():
+			teleport_data = self.network.get_received_teleport_data()
+			if teleport_data and teleport_data.get('target_map') and teleport_data.get('target_spawn'):
+				# Start fade out to teleport to the same location as host
+				self.state = GameConfig.STATE_FADING_OUT
+				self.fade_alpha = 0
+				self.teleport_target_map = teleport_data.get('target_map')
+				self.teleport_target_spawn = teleport_data.get('target_spawn')
+				# Clear any pending teleport that might have been set
+				self.pending_teleport_map = None
+				self.pending_teleport_spawn = None
+
 		# ===== PROCESS QUEUED KEY EVENTS (JOIN PLAYER) =====
 		# Handle received key events on the main thread to avoid race conditions
+		# Note: Teleport check must happen before this to ensure proper sync
 		if self.player_role == 'shione' and self.pending_key_events:
 			try:
 				for ev in list(self.pending_key_events):
