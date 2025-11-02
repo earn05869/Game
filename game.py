@@ -8,6 +8,7 @@ import threading
 import subprocess
 import sys
 import time
+import socket
 
 class Game:
 	"""
@@ -121,13 +122,22 @@ class Game:
 		# ===== LOCAL SERVER PROCESS (HOST ONLY) =====
 		self.server_process: Optional[subprocess.Popen] = None
 
-	def _connect_to_server(self):
-		"""Connect to multiplayer server."""
+	def _connect_to_server(self, server_host=None, return_to_state=None):
+		"""
+		Connect to multiplayer server.
+		return_to_state: If connection fails, return to this state (default: HOME or JOIN_INPUT based on current state)
+		"""
 		print("[GAME] Connecting to server...")
+		previous_state = self.state  # Save state before connecting
 		self.state = GameConfig.STATE_CONNECTING
 		
+		# Use provided server host, or fall back to config/environment variable
+		if server_host is None:
+			server_host = GameConfig.SERVER_HOST
+		
 		# Create network client
-		self.network = NetworkClient(GameConfig.SERVER_HOST, GameConfig.SERVER_PORT)
+		print(f"[GAME] Connecting to {server_host}:{GameConfig.SERVER_PORT}")
+		self.network = NetworkClient(server_host, GameConfig.SERVER_PORT)
 		
 		# Connect (retry briefly to allow local server startup)
 		connected = False
@@ -150,7 +160,13 @@ class Game:
 			return True
 		else:
 			print("[GAME] Failed to connect to server")
-			self.state = GameConfig.STATE_HOME
+			# Restore to previous state or specified return state
+			if return_to_state:
+				self.state = return_to_state
+			elif previous_state == GameConfig.STATE_JOIN_INPUT:
+				self.state = GameConfig.STATE_JOIN_INPUT
+			else:
+				self.state = GameConfig.STATE_HOME
 			return False
 
 	def _start_local_server(self):
@@ -164,6 +180,17 @@ class Game:
 			self.server_process = subprocess.Popen([sys.executable, server_path], cwd=os.path.dirname(server_path))
 		except Exception as e:
 			print(f"[GAME] Failed to start local server: {e}")
+	
+	def _get_local_ip(self):
+		"""Get local IP address."""
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+			s.connect(("8.8.8.8", 80))
+			ip = s.getsockname()[0]
+			s.close()
+			return ip
+		except Exception:
+			return "localhost"
 	
 	def _on_server_ready(self):
 		"""Called when server sends ready signal (both players connected)."""
@@ -318,7 +345,7 @@ class Game:
 			
 			# ===== HANDLE HOME PAGE INPUT =====
 			if self.state == GameConfig.STATE_HOME:
-				result = self.home_page.handle_input(event)
+				result = self.home_page.handle_input(event, GameConfig.STATE_HOME)
 				if result == 'host':
 					# Host: Set role as 'shion' and connect to server
 					self.player_role = 'shion'
@@ -329,12 +356,28 @@ class Game:
 						# Connection successful, will wait for other player
 						pass
 				elif result == 'join':
+					# Switch to IP input page
+					self.state = GameConfig.STATE_JOIN_INPUT
+				continue
+			
+			# ===== HANDLE JOIN IP INPUT PAGE =====
+			if self.state == GameConfig.STATE_JOIN_INPUT:
+				result = self.home_page.handle_input(event, GameConfig.STATE_JOIN_INPUT)
+				if result == 'connect':
 					# Join: Set role as 'shione' and connect to server
 					self.player_role = 'shione'
 					print(f"[GAME] Role set to: {self.player_role}")
-					if self._connect_to_server():
-						# Connection successful, will wait for other player
-						pass
+					# Get server IP from HomePage
+					server_ip = self.home_page.get_server_ip()
+					print(f"[GAME] Attempting to connect to server at {server_ip}")
+					# Connect with return state set to JOIN_INPUT in case of failure
+					connection_success = self._connect_to_server(server_ip, return_to_state=GameConfig.STATE_JOIN_INPUT)
+					if connection_success:
+						# Connection successful, should be in WAITING state now
+						print(f"[GAME] Connection successful! Current state: {self.state}")
+					else:
+						# Connection failed, should already be back at JOIN_INPUT state
+						print(f"[GAME] Connection failed. Current state: {self.state}")
 				continue
 			
 			# ===== BLOCK INPUT DURING END SCREEN =====
@@ -727,6 +770,10 @@ class Game:
 		if self.state == GameConfig.STATE_HOME:
 			return
 		
+		# ===== STATE: JOIN_INPUT (Do nothing, just wait for input) =====
+		if self.state == GameConfig.STATE_JOIN_INPUT:
+			return
+		
 		# ===== STATE: WAITING =====
 		# Check if server is ready and start game
 		if self.state == GameConfig.STATE_WAITING:
@@ -1017,7 +1064,13 @@ class Game:
 		
 		# ===== STATE: HOME =====
 		if self.state == GameConfig.STATE_HOME:
-			self.home_page.draw(self.screen)
+			self.home_page.draw(self.screen, GameConfig.STATE_HOME)
+			pygame.display.flip()
+			return
+		
+		# ===== STATE: JOIN_INPUT =====
+		if self.state == GameConfig.STATE_JOIN_INPUT:
+			self.home_page.draw(self.screen, GameConfig.STATE_JOIN_INPUT)
 			pygame.display.flip()
 			return
 		
@@ -1036,21 +1089,37 @@ class Game:
 			self.screen.fill((20, 10, 30))
 			font = pygame.font.Font(None, 48)
 			role_font = pygame.font.Font(None, 36)
+			info_font = pygame.font.Font(None, 32)
 			
 			# Show role if set
 			if self.player_role:
 				role_text = role_font.render(f"Role: {self.player_role.upper()}", True, (200, 200, 255))
-				role_rect = role_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 - 80))
+				role_rect = role_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 - 120))
 				self.screen.blit(role_text, role_rect)
 			
 			player_text = font.render(f"You are Player {self.player_id}", True, (255, 255, 255))
 			wait_text = font.render("Waiting for other player...", True, (200, 200, 200))
 			
-			player_rect = player_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 - 20))
-			wait_rect = wait_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 + 40))
+			player_rect = player_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 - 40))
+			wait_rect = wait_text.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 + 20))
 			
 			self.screen.blit(player_text, player_rect)
 			self.screen.blit(wait_text, wait_rect)
+			
+			# Show server IP for Host player
+			if self.player_role == 'shion':
+				server_ip = self._get_local_ip()
+				ip_info_text = f"Server IP: {server_ip}"
+				ip_info_surface = info_font.render(ip_info_text, True, (200, 255, 200))
+				ip_info_rect = ip_info_surface.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 + 80))
+				self.screen.blit(ip_info_surface, ip_info_rect)
+				
+				# Hint text
+				hint_text = "Tell this IP to the other player"
+				hint_surface = role_font.render(hint_text, True, (150, 200, 150))
+				hint_rect = hint_surface.get_rect(center=(GameConfig.SCREEN_WIDTH//2, GameConfig.SCREEN_HEIGHT//2 + 120))
+				self.screen.blit(hint_surface, hint_rect)
+			
 			pygame.display.flip()
 			return
 		

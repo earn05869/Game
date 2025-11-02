@@ -95,12 +95,54 @@ python3 game.py
 
 ## Configuration
 
-ใน `simple_2d_game.py`:
+### การเล่นบนเครื่องเดียวกัน (Local)
+ใช้ค่า default `SERVER_HOST = "localhost"` ไม่ต้องตั้งค่าอะไร
 
+### การเล่นข้ามเครื่อง (Network Play)
+
+**วิธีที่ 1: ใช้ Environment Variable (แนะนำ)**
+
+1. **บนเครื่อง Server (Host):**
+   ```bash
+   python3 server.py
+   ```
+   Server จะแสดง IP address เช่น: `[SERVER] Server started on 192.168.1.100:5555`
+   - บันทึก IP address นี้ไว้ (เช่น `192.168.1.100`)
+
+2. **บนเครื่อง Client (Join):**
+   ```bash
+   export TELEPORT_SERVER_HOST=192.168.1.100  # ใส่ IP ของ server
+   python3 game.py
+   ```
+
+   **Windows (Command Prompt):**
+   ```cmd
+   set TELEPORT_SERVER_HOST=192.168.1.100
+   python game.py
+   ```
+
+   **Windows (PowerShell):**
+   ```powershell
+   $env:TELEPORT_SERVER_HOST="192.168.1.100"
+   python game.py
+   ```
+
+**วิธีที่ 2: แก้ไขโค้ด (ไม่แนะนำ)**
+แก้ไขใน `simple_2d_game.py`:
 ```python
-SERVER_HOST = "localhost"  # เปลี่ยนเป็น IP ของ server หากเล่นข้ามเครื่อง
+SERVER_HOST = "192.168.1.100"  # เปลี่ยนเป็น IP ของ server
 SERVER_PORT = 5555
 ```
+
+### หา IP Address ของ Server
+- **Linux/Mac:** ใช้คำสั่ง `ifconfig` หรือ `ip addr`
+- **Windows:** ใช้คำสั่ง `ipconfig`
+- มองหา IP ที่อยู่ในเครือข่ายเดียวกัน (เช่น `192.168.x.x` หรือ `10.0.x.x`)
+
+### ข้อควรระวัง
+- Server และ Client ต้องอยู่ในเครือข่าย WiFi เดียวกัน
+- ตรวจสอบว่า Firewall ไม่ได้บล็อกพอร์ต 5555
+- ใช้ IP address ของ Server ไม่ใช่ Client
 
 ## หมายเหตุ
 

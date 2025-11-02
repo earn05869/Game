@@ -62,12 +62,16 @@ class GameConfig:
 	START_MAP_PATH = "asset/room1/room1.tmx"
 	
 	# ===== NETWORK SETTINGS =====
-	SERVER_HOST = "localhost"
+	# SERVER_HOST can be set via environment variable TELEPORT_SERVER_HOST
+	# Defaults to "localhost" for local testing
+	# For network play, set it to the server's IP address (e.g., "192.168.1.100")
+	SERVER_HOST = os.environ.get("TELEPORT_SERVER_HOST", "localhost")
 	SERVER_PORT = 5555
 	
 	# ===== GAME STATES =====
 	# These control what the game is currently doing
 	STATE_HOME = "HOME"                 # Home screen with menu
+	STATE_JOIN_INPUT = "JOIN_INPUT"     # IP input screen for Join player
 	STATE_CONNECTING = "CONNECTING"     # Connecting to server
 	STATE_WAITING = "WAITING"           # Waiting for other players
 	STATE_PLAYING = "PLAYING"           # Normal gameplay
