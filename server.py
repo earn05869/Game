@@ -110,6 +110,12 @@ def handle_client(client_socket, addr, player_id):
 						# Forward teleport to join player (player 2)
 						broadcast_teleport(teleport_data)
 					
+					# Handle end screen state (only from host/player 1)
+					elif msg_type == 'end_screen' and player_id == 1:
+						end_screen_state = msg_data.get('state', {})
+						# Forward end screen state to join player (player 2)
+						broadcast_end_screen_state(end_screen_state)
+					
 					# Handle exit game (both players can send, exits both)
 					elif msg_type == 'exit_game':
 						print(f"[SERVER] Player {player_id} requested exit game - closing all connections")
@@ -202,6 +208,22 @@ def broadcast_teleport(teleport_data: dict):
 				connected_players[2]['socket'].sendall(message.encode('utf-8'))
 			except Exception as e:
 				print(f"[SERVER] Failed to send teleport to player 2: {e}")
+
+def broadcast_end_screen_state(end_screen_state: dict):
+	"""
+	Broadcast end screen state from host to join player.
+	"""
+	with lock:
+		# Only send to player 2 (join player)
+		if 2 in connected_players:
+			try:
+				message = json.dumps({
+					'type': 'end_screen',
+					'state': end_screen_state
+				})
+				connected_players[2]['socket'].sendall(message.encode('utf-8'))
+			except Exception as e:
+				print(f"[SERVER] Failed to send end screen state to player 2: {e}")
 
 def broadcast_exit_game():
 	"""

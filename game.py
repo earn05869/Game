@@ -78,6 +78,21 @@ class Game:
 		self.state = GameConfig.STATE_HOME  # Start with home screen
 		self.current_interaction_target = None
 		self.game_flags = set()  # For tracking story progress
+		
+		# ===== ROOM TRACKING =====
+		self.visited_rooms = set()  # Track which rooms have been visited
+		
+		# ===== END SCREEN STATE =====
+		self.end_screen_text_index = 0  # Current text in end sequence
+		self.end_screen_texts = [
+			"Resolution",
+			"This Game is a demo game.",
+			"Created by \n67050066 Jidapa Chindaprasert\n67050128 Thitima Nawpraya"
+		]
+		self.end_screen_fade_alpha = 0  # Text fade alpha (0 = invisible, 255 = visible)
+		self.end_screen_fade_direction = 1  # 1 = fading in, -1 = fading out
+		self.end_screen_timer = 0  # Timer for each text display duration
+		self.end_screen_text_duration = 2500  # Milliseconds to show each text before fading out
 
 		# ===== HOME PAGE =====
 		self.home_page = HomePage()
@@ -267,6 +282,18 @@ class Game:
 		self.scene.start()
 		self.current_interaction_target = None
 
+		# ===== TRACK ROOM VISITS =====
+		# Track when player enters yellow, blue, or red rooms
+		if "yellow" in map_path.lower():
+			self.visited_rooms.add("yellow")
+			print(f"[GAME] Visited yellow room. Total rooms: {len(self.visited_rooms)}")
+		elif "blue" in map_path.lower():
+			self.visited_rooms.add("blue")
+			print(f"[GAME] Visited blue room. Total rooms: {len(self.visited_rooms)}")
+		elif "red" in map_path.lower():
+			self.visited_rooms.add("red")
+			print(f"[GAME] Visited red room. Total rooms: {len(self.visited_rooms)}")
+
 		# ===== SETUP PENDING INTRO (HOST ONLY) =====
 		# Only trigger if this map has an intro and it hasn't been shown yet
 		if self.player_role == 'shion':
@@ -309,6 +336,10 @@ class Game:
 						# Connection successful, will wait for other player
 						pass
 				continue
+			
+			# ===== BLOCK INPUT DURING END SCREEN =====
+			if self.state == GameConfig.STATE_END_SCREEN:
+				continue  # Don't process input during end sequence
 			
 			# ===== BLOCK INPUT FOR JOIN PLAYER =====
 			# IMPORTANT: Join player (shione) cannot use any input
@@ -458,10 +489,37 @@ class Game:
 							# Next: Generic interactable (start dialogue)
 							interact_comp = game_object.get_component(Interactable)
 							if interact_comp:
-								# Dialogue script ID = object name
-								self.dialog_system.start_conversation(interact_comp.name)
-								if self.dialog_system.is_active:
-									self.state = GameConfig.STATE_DIALOGUE
+								# Special handling for "end" object
+								if interact_comp.name == "end":
+									# Check if all three rooms have been visited
+									if len(self.visited_rooms) >= 3 and "yellow" in self.visited_rooms and "blue" in self.visited_rooms and "red" in self.visited_rooms:
+										# All rooms visited - trigger end sequence
+										self.state = GameConfig.STATE_END_SCREEN
+										self.end_screen_text_index = 0
+										self.end_screen_fade_alpha = 0
+										self.end_screen_fade_direction = 1
+										self.end_screen_timer = 0
+										self.fade_alpha = 255  # Start with black screen
+										# Send end screen state to join player
+										if self.network and self.network.is_connected() and self.player_role == 'shion':
+											end_screen_state = {
+												'active': True,
+												'text_index': 0,
+												'fade_alpha': 0,
+												'fade_direction': 1,
+												'timer': 0
+											}
+											self.network.send_end_screen_state(end_screen_state)
+									else:
+										# Not all rooms visited - show locked door dialog
+										self.dialog_system.start_conversation("door_locked")
+										if self.dialog_system.is_active:
+											self.state = GameConfig.STATE_DIALOGUE
+								else:
+									# Regular interactable
+									self.dialog_system.start_conversation(interact_comp.name)
+									if self.dialog_system.is_active:
+										self.state = GameConfig.STATE_DIALOGUE
 		
 		return True
 	
@@ -559,10 +617,15 @@ class Game:
 						# Next: Generic interactable (start dialogue)
 						interact_comp = game_object.get_component(Interactable)
 						if interact_comp:
-							# Dialogue script ID = object name
-							self.dialog_system.start_conversation(interact_comp.name)
-							if self.dialog_system.is_active:
-								self.state = GameConfig.STATE_DIALOGUE
+							# Special handling for "end" object (join player follows host)
+							if interact_comp.name == "end":
+								# Join player doesn't initiate end sequence - follows host
+								pass
+							else:
+								# Regular interactable
+								self.dialog_system.start_conversation(interact_comp.name)
+								if self.dialog_system.is_active:
+									self.state = GameConfig.STATE_DIALOGUE
 	
 	def handle_dialogue_event(self, event: str):
 		"""
@@ -609,6 +672,33 @@ class Game:
 		# Add more events here as needed
 		# elif event == "unlock_door":
 		#     self.game_flags.add("door_unlocked")
+	
+	def _point_in_polygon(self, x: float, y: float, polygon: List[tuple]) -> bool:
+		"""
+		Check if a point (x, y) is inside a polygon using ray casting algorithm.
+		Returns True if point is inside the polygon, False otherwise.
+		"""
+		n = len(polygon)
+		inside = False
+		
+		if n < 3:
+			return False  # Not a valid polygon
+		
+		p1x, p1y = polygon[0]
+		for i in range(1, n + 1):
+			p2x, p2y = polygon[i % n]
+			if y > min(p1y, p2y):
+				if y <= max(p1y, p2y):
+					if x <= max(p1x, p2x):
+						if p1y != p2y:
+							xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+						else:
+							xinters = p1x
+						if p1x == p2x or x <= xinters:
+							inside = not inside
+			p1x, p1y = p2x, p2y
+		
+		return inside
 
 	def update(self, dt_ms: int) -> None:
 		"""
@@ -662,7 +752,23 @@ class Game:
 				# End dialogue if active (teleporting takes priority)
 				if self.dialog_system.is_active:
 					self.dialog_system.is_active = False
-
+		
+		# ===== PROCESS RECEIVED END SCREEN STATE (JOIN PLAYER) =====
+		# Handle received end screen state from host (MUST be before state checks to ensure sync)
+		# Continuously sync during end screen state
+		if self.player_role == 'shione' and self.network and self.network.is_connected():
+			end_screen_state = self.network.get_received_end_screen_state()
+			if end_screen_state and end_screen_state.get('active'):
+				# Sync end screen state for join player (continuous sync during end screen)
+				if self.state != GameConfig.STATE_END_SCREEN:
+					# First time entering end screen
+					self.fade_alpha = 255  # Start with black screen
+				self.state = GameConfig.STATE_END_SCREEN
+				self.end_screen_text_index = end_screen_state.get('text_index', self.end_screen_text_index)
+				self.end_screen_fade_alpha = end_screen_state.get('fade_alpha', self.end_screen_fade_alpha)
+				self.end_screen_fade_direction = end_screen_state.get('fade_direction', self.end_screen_fade_direction)
+				self.end_screen_timer = end_screen_state.get('timer', self.end_screen_timer)
+		
 		# ===== STATE: FADING OUT (Before teleport) =====
 		if self.state == GameConfig.STATE_FADING_OUT:
 			self.fade_alpha += GameConfig.FADE_SPEED
@@ -684,7 +790,8 @@ class Game:
 				self.pending_key_events.clear()
 
 		# ===== FADE IN/OUT VISUAL EFFECT =====
-		if self.fade_alpha > 0:
+		# Don't process regular fade during end screen (end screen handles its own fade)
+		if self.state != GameConfig.STATE_END_SCREEN and self.fade_alpha > 0:
 			self.fade_alpha -= GameConfig.FADE_SPEED
 			if self.fade_alpha <= 0:
 				self.fade_alpha = 0
@@ -715,9 +822,19 @@ class Game:
 		# Sync dialogue state between host and join
 		if self.network and self.network.is_connected():
 			if self.player_role == 'shion':
+				# Host: Send end screen state to join player when in end screen
+				if self.state == GameConfig.STATE_END_SCREEN:
+					end_screen_state = {
+						'active': True,
+						'text_index': self.end_screen_text_index,
+						'fade_alpha': self.end_screen_fade_alpha,
+						'fade_direction': self.end_screen_fade_direction,
+						'timer': self.end_screen_timer
+					}
+					self.network.send_end_screen_state(end_screen_state)
 				# Host: Send dialogue state to join player every frame when active
 				# Only send if state changed to reduce lag
-				if self.dialog_system.is_active:
+				elif self.dialog_system.is_active:
 					dialog_state = {
 						'is_active': True,
 						'script_id': getattr(self.dialog_system, 'active_script_id', None),
@@ -832,6 +949,68 @@ class Game:
 				False  # Don't remove from group
 			)
 			self.current_interaction_target = collided[0] if collided else None
+			
+			# ===== TRACK SYSTEM (Yellow Room) =====
+			# Check if player is on track (only for yellow room)
+			if self.scene and self.scene.map_path and "yellow" in self.scene.map_path.lower():
+				if self.scene.track_polygons:
+					player_x = self.player_transform.rect.centerx
+					player_y = self.player_transform.rect.centery
+					
+					# Check if player is inside any track polygon
+					is_on_track = False
+					for polygon in self.scene.track_polygons:
+						if self._point_in_polygon(player_x, player_y, polygon):
+							is_on_track = True
+							break
+					
+					# If player is not on track, trigger exit game
+					if not is_on_track:
+						print("[GAME] Player left the track! Triggering exit game...")
+						self.handle_dialogue_event("exit_game")
+		
+		# ===== STATE: END_SCREEN (End credits sequence) =====
+		if self.state == GameConfig.STATE_END_SCREEN:
+			# First fade out the screen to black
+			if self.fade_alpha < 255:
+				self.fade_alpha += GameConfig.FADE_SPEED * 2  # Faster fade to black
+				if self.fade_alpha >= 255:
+					self.fade_alpha = 255
+			else:
+				# Screen is black, handle text fade in/out
+				fade_speed = 4  # Fade speed for text
+				
+				# Update text fade alpha
+				if self.end_screen_fade_direction == 1:
+					# Fading in
+					self.end_screen_fade_alpha += fade_speed
+					if self.end_screen_fade_alpha >= 255:
+						self.end_screen_fade_alpha = 255
+						# Wait a bit before starting fade out
+						if self.end_screen_timer < self.end_screen_text_duration:
+							self.end_screen_timer += dt_ms
+						else:
+							# Start fading out
+							self.end_screen_fade_direction = -1
+							self.end_screen_timer = 0
+				else:
+					# Fading out
+					self.end_screen_fade_alpha -= fade_speed
+					if self.end_screen_fade_alpha <= 0:
+						self.end_screen_fade_alpha = 0
+						# Move to next text
+						self.end_screen_text_index += 1
+						if self.end_screen_text_index >= len(self.end_screen_texts):
+							# All texts shown - exit game
+							print("[GAME] End sequence complete - exiting game...")
+							if self.network:
+								self.network.disconnect()
+							sys.exit(0)
+						else:
+							# Reset for next text
+							self.end_screen_fade_direction = 1
+							self.end_screen_timer = 0
+			return
 
 	def draw(self) -> None:
 		"""Render the current frame."""
@@ -875,6 +1054,45 @@ class Game:
 			pygame.display.flip()
 			return
 		
+		# ===== STATE: END_SCREEN (End credits sequence) =====
+		if self.state == GameConfig.STATE_END_SCREEN:
+			# Fill screen with black
+			self.screen.fill((0, 0, 0))
+			
+			# Only show text if screen is fully black
+			if self.fade_alpha >= 255 and self.end_screen_text_index < len(self.end_screen_texts):
+				# Get current text
+				current_text = self.end_screen_texts[self.end_screen_text_index]
+				
+				# Render text (handle multi-line with \n)
+				font = pygame.font.Font(None, 64)
+				
+				# Split text by newlines
+				lines = current_text.split('\n')
+				
+				# Render each line
+				line_surfaces = []
+				total_height = 0
+				for line in lines:
+					line_surface = font.render(line, True, (255, 255, 255))
+					line_surfaces.append(line_surface)
+					total_height += line_surface.get_height() + 10  # 10px spacing between lines
+				
+				# Calculate starting y position (centered)
+				start_y = (GameConfig.SCREEN_HEIGHT // 2) - (total_height // 2)
+				
+				# Draw each line
+				current_y = start_y
+				for line_surface in line_surfaces:
+					line_rect = line_surface.get_rect(center=(GameConfig.SCREEN_WIDTH//2, current_y))
+					# Apply fade alpha to text
+					line_surface.set_alpha(self.end_screen_fade_alpha)
+					self.screen.blit(line_surface, line_rect)
+					current_y += line_surface.get_height() + 10  # Move to next line with spacing
+			
+			pygame.display.flip()
+			return
+		
 		if not self.scene:
 			return
 		
@@ -901,7 +1119,15 @@ class Game:
 		
 		# ===== 3. DRAW SHION DARK OVERLAY =====
 		# Only the host (shion) sees a darker map view during gameplay/dialogue
-		if self.player_role == 'shion' and self.state in (GameConfig.STATE_PLAYING, GameConfig.STATE_DIALOGUE):
+		# Exception: Hide overlay when "white" dialogue is active in yellow room
+		should_hide_overlay = False
+		if self.scene and self.scene.map_path and "yellow" in self.scene.map_path.lower():
+			if self.state == GameConfig.STATE_DIALOGUE and self.dialog_system.is_active:
+				active_script_id = getattr(self.dialog_system, 'active_script_id', None)
+				if active_script_id == "white":
+					should_hide_overlay = True
+		
+		if self.player_role == 'shion' and self.state in (GameConfig.STATE_PLAYING, GameConfig.STATE_DIALOGUE) and not should_hide_overlay:
 			# Rebuild overlay each frame: dark fill + transparent circle at player
 			alpha_value = 240  # user-tuned darkness
 			self.shion_dark_surface.fill((0, 0, 0, alpha_value))

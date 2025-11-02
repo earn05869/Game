@@ -49,6 +49,9 @@ class NetworkClient:
 		# Received teleport data (for join player)
 		self.received_teleport_data = None
 		
+		# Received end screen state (for join player)
+		self.received_end_screen_state = None
+		
 		# Received exit game flag
 		self.received_exit_game = False
 	
@@ -203,6 +206,9 @@ class NetworkClient:
 								'target_map': message.get('target_map'),
 								'target_spawn': message.get('target_spawn')
 							}
+						# Check if it's an end screen state update
+						elif message.get('type') == 'end_screen':
+							self.received_end_screen_state = message.get('state', {})
 						# Check if it's an exit game command
 						elif message.get('type') == 'exit_game':
 							print("[NETWORK] Received exit game command from server")
@@ -306,6 +312,22 @@ class NetworkClient:
 		except Exception as e:
 			print(f"[NETWORK] Failed to send teleport: {e}")
 			self.connected = False
+	
+	def send_end_screen_state(self, state: dict):
+		"""Send end screen state to server (host only)."""
+		if not self.connected or not self.socket:
+			return
+		
+		try:
+			message = json.dumps({'type': 'end_screen', 'state': state})
+			self.socket.sendall(message.encode('utf-8'))
+		except Exception as e:
+			print(f"[NETWORK] Failed to send end screen state: {e}")
+			self.connected = False
+	
+	def get_received_end_screen_state(self) -> dict:
+		"""Get the latest received end screen state (for join player)."""
+		return self.received_end_screen_state
 	
 	def send_exit_game(self):
 		"""Send exit game command to server (both players can send)."""

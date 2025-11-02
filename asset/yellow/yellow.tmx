@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="17" height="8" tilewidth="64" tileheight="64" infinite="0" nextlayerid="8" nextobjectid="14">
+<map version="1.10" tiledversion="1.11.2" orientation="orthogonal" renderorder="right-down" width="17" height="8" tilewidth="64" tileheight="64" infinite="0" nextlayerid="8" nextobjectid="26">
  <tileset firstgid="1" source="yellow.tsx"/>
  <layer id="1" name="ground" width="17" height="8">
   <data encoding="csv">
@@ -36,8 +36,15 @@
   </object>
  </objectgroup>
  <objectgroup id="6" name="track">
-  <object id="10" name="track" x="148.5" y="237">
-   <polygon points="0,0 110.5,0 111,-114 278.25,-114.25 277.75,-85.5 374.25,-86.25 373,87 234.5,87 235,126.5 453.5,126 454.5,15 454.5,-4 726.167,-5.66667 726.5,43 494.5,42.3333 494.955,157 191.25,157.25 190.5,42 333.25,43 333,-45.25 236,-45.5 235.5,-85.75 156,-85.5 156.25,43 -2,40.5 -3,-0.5"/>
-  </object>
+  <object id="15" x="146.5" y="230.5" width="167" height="55.5"/>
+  <object id="16" x="256" y="118.5" width="58" height="143"/>
+  <object id="17" x="255.333" y="102" width="181.333" height="55.5"/>
+  <object id="18" x="376" y="142.833" width="160.5" height="53.1667"/>
+  <object id="19" x="471.833" y="143.583" width="64.8333" height="184.167"/>
+  <object id="20" x="340" y="271.333" width="188.667" height="56"/>
+  <object id="21" x="337.333" y="276.667" width="58" height="119.333"/>
+  <object id="22" x="335" y="350" width="310" height="53"/>
+  <object id="23" x="590" y="220" width="66" height="144"/>
+  <object id="25" x="593.333" y="221.333" width="289.333" height="58.6667"/>
  </objectgroup>
 </map>

@@ -74,6 +74,7 @@ class GameConfig:
 	STATE_DIALOGUE = "DIALOGUE"         # Dialogue box is active
 	STATE_FADING_OUT = "FADING_OUT"     # Screen going black (before teleport)
 	STATE_FADING_IN = "FADING_IN"       # Screen coming back (after teleport)
+	STATE_END_SCREEN = "END_SCREEN"     # End credits sequence
 	
 	# ===== TRANSITION SETTINGS =====
 	FADE_SPEED = 20  # Alpha change per frame (higher = faster fade)
@@ -595,6 +596,9 @@ class Scene:
 		self.solid_objects = pygame.sprite.Group()  # Things you can't walk through
 		self.interactables = pygame.sprite.Group()  # Things you can press E on
 		
+		# Track polygons (for yellow room track system)
+		self.track_polygons: List[List[tuple]] = []
+		
 		# Create all objects from the map file
 		self._create_objects_from_map()
 	
@@ -743,6 +747,101 @@ class Scene:
 				self.add_game_object(go)
 		except ValueError:
 			print("Warning: 'teleport' layer not found in map")
+		
+		# ===== TRACK LAYER =====
+		# Safe paths the player must follow (e.g., yellow room track)
+		try:
+			for obj in self.tmx_data.get_layer_by_name("track"):
+				if hasattr(obj, 'polygon'):  # Polygon object
+					# Get polygon points relative to object position
+					base_x = obj.x
+					base_y = obj.y
+					polygon_points = []
+					for point in obj.polygon:
+						# Polygon points are relative to the object's position
+						polygon_points.append((base_x + point.x, base_y + point.y))
+					# Expand polygon by 5 pixels
+					polygon_points = self._expand_polygon(polygon_points, 5.0)
+					self.track_polygons.append(polygon_points)
+					print(f"Loaded track polygon with {len(polygon_points)} points (expanded by 5px)")
+				elif hasattr(obj, 'width') and hasattr(obj, 'height'):  # Rectangle object
+					# Convert rectangle to polygon (4 corners)
+					polygon_points = [
+						(obj.x, obj.y),
+						(obj.x + obj.width, obj.y),
+						(obj.x + obj.width, obj.y + obj.height),
+						(obj.x, obj.y + obj.height)
+					]
+					# Expand polygon by 5 pixels
+					polygon_points = self._expand_polygon(polygon_points, 5.0)
+					self.track_polygons.append(polygon_points)
+					print(f"Loaded track rectangle (expanded by 5px)")
+		except ValueError:
+			# No track layer - that's fine, not all maps have tracks
+			pass
+	
+	def _expand_polygon(self, polygon: List[tuple], offset: float) -> List[tuple]:
+		"""
+		Expand a polygon outward by the specified offset distance.
+		Returns a new list of polygon points.
+		"""
+		if len(polygon) < 3:
+			return polygon
+		
+		import math
+		expanded = []
+		n = len(polygon)
+		
+		for i in range(n):
+			# Get current, previous, and next points
+			prev_idx = (i - 1) % n
+			curr_idx = i
+			next_idx = (i + 1) % n
+			
+			px, py = polygon[prev_idx]
+			cx, cy = polygon[curr_idx]
+			nx, ny = polygon[next_idx]
+			
+			# Calculate vectors from current to previous and next
+			dx1 = cx - px
+			dy1 = cy - py
+			dx2 = nx - cx
+			dy2 = ny - cy
+			
+			# Normalize vectors
+			len1 = math.sqrt(dx1*dx1 + dy1*dy1)
+			len2 = math.sqrt(dx2*dx2 + dy2*dy2)
+			
+			if len1 > 0:
+				dx1 /= len1
+				dy1 /= len1
+			if len2 > 0:
+				dx2 /= len2
+				dy2 /= len2
+			
+			# Calculate perpendicular vectors (pointing outward)
+			# Rotate 90 degrees counter-clockwise
+			perp1_x = -dy1
+			perp1_y = dx1
+			perp2_x = -dy2
+			perp2_y = dx2
+			
+			# Average the two perpendicular vectors to get the offset direction
+			avg_x = (perp1_x + perp2_x) / 2.0
+			avg_y = (perp1_y + perp2_y) / 2.0
+			
+			# Normalize the average vector
+			avg_len = math.sqrt(avg_x*avg_x + avg_y*avg_y)
+			if avg_len > 0:
+				avg_x /= avg_len
+				avg_y /= avg_len
+			
+			# Apply offset
+			new_x = cx + avg_x * offset
+			new_y = cy + avg_y * offset
+			expanded.append((new_x, new_y))
+		
+		return expanded
 
 	def create_player(self, x: int, y: int) -> GameObject:
 		"""Factory method to create the player GameObject at a specific position."""
@@ -976,6 +1075,7 @@ class DialogSystem:
 		],
 		"bunny": [
 			DialogueLine("Bunny", "พี่มาทำอะไรที่นี่หรอคะ หนูน่ะไม่อยากให้พี่ออกไปเลย", portrait_key="bunny"),
+			DialogueLine("Shione", "ฉันว่าเราควรจะจัดการนะ", portrait_key="shione_neutral"),
 			DialogueLine("Shione",
 			"ฉันว่าเราควรจะจัดการนะ",
 			choices=[
@@ -986,6 +1086,7 @@ class DialogSystem:
 		],
 		"sheep": [
 			DialogueLine("Sheep", "พ....พวกคุณมาทำอะไรที่นี่หรอค่ะ ช่วยฉันด้วย", portrait_key="sheep"),
+			DialogueLine("Shione", "เราควรช่วยเขานะ", portrait_key="shione_neutral"),
 			DialogueLine("Shione",
 				"เราควรช่วยเขานะ",
 				choices=[
@@ -994,7 +1095,9 @@ class DialogSystem:
 			],
 			portrait_key="shione_neutral"),
 		],
-		"fish": [DialogueLine("Shione", "เงือกอยู่บนน้ำ มันน่าสงสัยไปแล้วรึเปล่า",
+		"fish": [
+			DialogueLine("Shione", "เงือกอยู่บนน้ำ มันน่าสงสัยไปแล้วรึเปล่า", portrait_key="shione_neutral"),
+			DialogueLine("Shione", "เงือกอยู่บนน้ำ มันน่าสงสัยไปแล้วรึเปล่า",
 			choices=[
 				DialogueChoice("ฆ่า", event="exit_game", goto_script=None),
 				DialogueChoice("ไม่ฆ่า", event="exit_fish", goto_script=None),
@@ -1008,17 +1111,19 @@ class DialogSystem:
 			DialogueLine("Shion", "ฉันมองเห็น", portrait_key="shion_neutral")],
 		"closed_door": [DialogueLine(None, "ประตูนี้ปิดอยู่")],
 		"room1_hall": [
+			DialogueLine(None, "ชอบหนังสือเล่มไหนมากที่สุด?"),
 			DialogueLine(
 				None, 
 				"ชอบหนังสือเล่มไหนมากที่สุด?",
 				choices=[
-					DialogueChoice("Book 1", event="select_book1", goto_script="book1"),
-					DialogueChoice("Book 2", event="select_book2", goto_script="book2"),
-					DialogueChoice("Book 3", event="select_book3", goto_script="book3"),
+					DialogueChoice("Red book", event="select_book1", goto_script=None),
+					DialogueChoice("Blue book", event="select_book2", goto_script=None),
+					DialogueChoice("Yellow book", event="select_book3", goto_script=None),
 				],
 				portrait_key="shione_neutral"
 			)],
 		"red_hall": [
+			DialogueLine(None, "คุณจะทำลายดวงตาดวงไหน?"),
 			DialogueLine(
 				None,
 				"คุณจะทำลายดวงตาดวงไหน?",
@@ -1033,6 +1138,9 @@ class DialogSystem:
 				],
 				portrait_key="shione_neutral"
 			)],
+		"door_locked": [
+			DialogueLine(None, "the door is lock")
+		],
 		"default": [DialogueLine(None, "An interesting object.")],
 		}
 
@@ -1452,9 +1560,28 @@ class DialogSystem:
 		backdrop.fill((0, 0, 0, 180))  # Dark overlay with transparency
 		screen.blit(backdrop, (0, 0))
 		
+		# ===== CALCULATE DYNAMIC BOX SIZE BASED ON NUMBER OF CHOICES =====
+		choice_padding = 20
+		choice_height = 70
+		choice_spacing = 15
+		top_padding = 60
+		bottom_padding = 40  # For navigation hints
+		
+		# Calculate required height
+		num_choices = len(self.current_choices)
+		required_height = top_padding + (num_choices * (choice_height + choice_spacing)) - choice_spacing + bottom_padding
+		
+		# Use dynamic height or minimum size
+		box_height = max(required_height, 400)
+		box_width = 600  # Keep width constant
+		
+		# Calculate centered position
+		box_x = (GameConfig.SCREEN_WIDTH - box_width) // 2
+		box_y = (GameConfig.SCREEN_HEIGHT - box_height) // 2
+		box_rect = pygame.Rect(box_x, box_y, box_width, box_height)
+		
 		# ===== DRAW CHOICE BOX BACKGROUND =====
 		# Main box with rounded corners effect (using gradient-like border)
-		box_rect = self.choice_box_rect.copy()
 		
 		# Outer glow effect
 		outer_rect = box_rect.inflate(10, 10)
@@ -1469,10 +1596,7 @@ class DialogSystem:
 		pygame.draw.rect(screen, (40, 50, 70), inner_rect, border_radius=8)
 		
 		# ===== CALCULATE CHOICE ITEM POSITIONS =====
-		choice_padding = 20
-		choice_height = 70
-		choice_spacing = 15
-		start_y = box_rect.y + 60
+		start_y = box_rect.y + top_padding
 		
 		# Calculate pulse animation for selected item
 		pulse_factor = abs(math.sin(self.choice_animation_timer / 200.0)) * 0.15 + 0.85
