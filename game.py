@@ -291,23 +291,86 @@ class Game:
 		"""
 		Load a new scene and create player at spawn point.
 		Called at game start and when teleporting between scenes.
+		Ensures map is completely loaded before starting game logic.
 		"""
-		print(f"Loading scene: {map_path} at spawn point: '{spawn_point_name}'")
+		print(f"[GAME] Loading scene: {map_path} at spawn point: '{spawn_point_name}'")
 
-		# Create new scene
+		# Create new scene (this loads map, renders it, creates objects, and verifies loading)
 		self.scene = Scene(self, map_path)
 		
-		# Find spawn point and create player there
+		# CRITICAL: Verify scene is fully loaded before proceeding
+		if not self.scene.is_fully_loaded:
+			raise RuntimeError(f"Scene {map_path} failed to load completely!")
+		print(f"[GAME] Scene loading verified - ready for gameplay")
+		
+		# Find spawn point
 		spawn_pos = self.scene.find_spawn_point(spawn_point_name)
-		self.player_go = self.scene.create_player(spawn_pos[0], spawn_pos[1])
+		
+		# CRITICAL: For yellow room, verify spawn point is on track before creating player
+		if "yellow" in map_path.lower():
+			if not self.scene.is_spawn_on_track(spawn_pos[0], spawn_pos[1]):
+				print(f"[GAME] WARNING: Spawn point '{spawn_point_name}' at ({spawn_pos[0]}, {spawn_pos[1]}) is NOT on track!")
+				print(f"[GAME] This may cause immediate exit_game. Checking track polygons...")
+				print(f"[GAME] Track polygons loaded: {len(self.scene.track_polygons)}")
+				# Try to find a nearby track position (fallback)
+				# For now, just warn - spawn point should be correct in map editor
+			else:
+				print(f"[GAME] Spawn point '{spawn_point_name}' verified on track")
+		
+		# Create player at verified spawn point
+		# CRITICAL: Store spawn position to verify after creation
+		expected_spawn_x = spawn_pos[0]
+		expected_spawn_y = spawn_pos[1]
+		print(f"[GAME] Creating player at spawn position: ({expected_spawn_x}, {expected_spawn_y})")
+		
+		self.player_go = self.scene.create_player(expected_spawn_x, expected_spawn_y)
 		
 		# Cache player component references for quick access
 		self.player_transform = self.player_go.get_component(Transform)
 		self.player_collider = self.player_go.get_component(BoxCollider)
 		
-		# Initialize all scene objects
+		# CRITICAL: Verify player was created at correct position BEFORE scene.start()
+		if self.player_transform:
+			actual_x = self.player_transform.rect.centerx
+			actual_y = self.player_transform.rect.centery
+			print(f"[GAME] Player created at position: ({actual_x}, {actual_y})")
+			# For point objects, x,y should be the position directly
+			# Transform uses centerx/centery, so we need to check if they match
+			if abs(actual_x - expected_spawn_x) > 5 or abs(actual_y - expected_spawn_y) > 5:
+				print(f"[GAME] ERROR: Player position mismatch! Expected ({expected_spawn_x}, {expected_spawn_y}), got ({actual_x}, {actual_y})")
+				# Force set to correct position
+				self.player_transform.rect.centerx = expected_spawn_x
+				self.player_transform.rect.centery = expected_spawn_y
+				print(f"[GAME] Corrected player position to spawn point")
+			else:
+				print(f"[GAME] Player position matches spawn point ✓")
+		
+		# Initialize all scene objects (after player is created and verified)
 		self.scene.start()
 		self.current_interaction_target = None
+		
+		# CRITICAL: Verify player position again after scene.start() to ensure it wasn't moved
+		if self.player_transform:
+			final_x = self.player_transform.rect.centerx
+			final_y = self.player_transform.rect.centery
+			if abs(final_x - expected_spawn_x) > 5 or abs(final_y - expected_spawn_y) > 5:
+				print(f"[GAME] WARNING: Player position changed after scene.start()! Resetting to spawn.")
+				self.player_transform.rect.centerx = expected_spawn_x
+				self.player_transform.rect.centery = expected_spawn_y
+				# Update collider too
+				if self.player_collider:
+					self.player_collider.rect.centerx = expected_spawn_x
+					self.player_collider.rect.centery = expected_spawn_y
+		
+		# CRITICAL: Verify player is fully spawned and initialized
+		self._verify_player_spawned()
+		
+		# Store spawn position for later verification
+		self.last_spawn_position = (expected_spawn_x, expected_spawn_y)
+		
+		# Flag to track if intro dialog has been shown for this scene
+		# This prevents track checking during intro dialog
+		self.intro_dialog_shown = False
 
 		# ===== TRACK ROOM VISITS =====
 		# Track when player enters yellow, blue, or red rooms
@@ -333,6 +396,69 @@ class Game:
 				flag_key = f"intro_shown:{norm_map}"
 				if flag_key not in self.game_flags:
 					self.pending_intro_script = intro_script
+
+	def _verify_player_spawned(self) -> None:
+		"""
+		Verify that the player is fully spawned, initialized, and ready.
+		This ensures player components exist and are properly set up before gameplay/dialog.
+		"""
+		if not self.player_go:
+			raise RuntimeError("Player GameObject not created!")
+		
+		if not self.player_transform:
+			raise RuntimeError("Player Transform component not found!")
+		
+		if not self.player_collider:
+			raise RuntimeError("Player BoxCollider component not found!")
+		
+		# Verify player has valid position
+		if not hasattr(self.player_transform, 'rect'):
+			raise RuntimeError("Player Transform missing rect attribute!")
+		
+		if self.player_transform.rect is None:
+			raise RuntimeError("Player Transform rect is None!")
+		
+		# CRITICAL: Verify player position is valid (not 0,0 unless that's intentional)
+		player_x = self.player_transform.rect.centerx
+		player_y = self.player_transform.rect.centery
+		if player_x == 0 and player_y == 0:
+			print(f"[GAME] WARNING: Player is at (0, 0) - this might indicate spawn point not found!")
+		
+		# For yellow room, verify player spawn position is on track
+		if self.scene and "yellow" in self.scene.map_path.lower():
+			if not self.scene.is_spawn_on_track(player_x, player_y):
+				print(f"[GAME] ERROR: Player spawned at ({player_x}, {player_y}) is NOT on track!")
+				print(f"[GAME] Track polygons available: {len(self.scene.track_polygons)}")
+				print(f"[GAME] This will cause immediate exit_game!")
+				# Try to find a valid track position nearby
+				if self.scene.track_polygons:
+					# Find first track polygon center as fallback
+					for polygon in self.scene.track_polygons:
+						if len(polygon) > 0:
+							# Calculate polygon center
+							px = sum(p[0] for p in polygon) / len(polygon)
+							py = sum(p[1] for p in polygon) / len(polygon)
+							print(f"[GAME] Attempting to move player to track center: ({px}, {py})")
+							self.player_transform.rect.centerx = px
+							self.player_transform.rect.centery = py
+							self.player_collider.rect.centerx = px
+							self.player_collider.rect.centery = py
+							print(f"[GAME] Player moved to track position")
+							break
+				else:
+					print(f"[GAME] No track polygons available - cannot fix position")
+			else:
+				print(f"[GAME] Player spawn verified on track at ({player_x}, {player_y}) ✓")
+		
+		# Verify PlayerController exists (for movement)
+		player_controller = self.player_go.get_component(PlayerController)
+		if not player_controller:
+			raise RuntimeError("Player missing PlayerController component!")
+		
+		# Final position verification
+		final_x = self.player_transform.rect.centerx
+		final_y = self.player_transform.rect.centery
+		print(f"[GAME] Player spawn verified - final position: ({final_x}, {final_y})")
 
 	def handle_input(self) -> bool:
 		"""
@@ -432,25 +558,27 @@ class Game:
 							triggered_event = self.dialog_system.select_choice()
 							if triggered_event:
 								self.handle_dialogue_event(triggered_event)
-							# Check if dialogue ended after choice
-							if not self.dialog_system.is_active:
-								if self.state == GameConfig.STATE_DIALOGUE:
-									# Check if there's a pending teleport (from teleport with dialog)
-									if self.pending_teleport_map and self.pending_teleport_spawn:
-										# Teleport automatically after dialog ends
-										self.state = GameConfig.STATE_FADING_OUT
-										self.fade_alpha = 0
-										self.teleport_target_map = self.pending_teleport_map
-										self.teleport_target_spawn = self.pending_teleport_spawn
-										# Send teleport data to server for join player
-										if self.network and self.network.is_connected() and self.player_role == 'shion':
-											self.network.send_teleport(self.teleport_target_map, self.teleport_target_spawn)
-										# Clear pending teleport
-										self.pending_teleport_map = None
-										self.pending_teleport_spawn = None
-									else:
-										# Normal dialog end: return to gameplay
-										self.state = GameConfig.STATE_PLAYING
+						# Check if dialogue ended after choice
+						if not self.dialog_system.is_active:
+							if self.state == GameConfig.STATE_DIALOGUE:
+								# Check if there's a pending teleport (from teleport with dialog)
+								if self.pending_teleport_map and self.pending_teleport_spawn:
+									# Teleport automatically after dialog ends
+									self.state = GameConfig.STATE_FADING_OUT
+									self.fade_alpha = 0
+									self.teleport_target_map = self.pending_teleport_map
+									self.teleport_target_spawn = self.pending_teleport_spawn
+									# Send teleport data to server for join player
+									if self.network and self.network.is_connected() and self.player_role == 'shion':
+										self.network.send_teleport(self.teleport_target_map, self.teleport_target_spawn)
+									# Clear pending teleport
+									self.pending_teleport_map = None
+									self.pending_teleport_spawn = None
+								else:
+									# Normal dialog end: return to gameplay
+									self.state = GameConfig.STATE_PLAYING
+									# Mark intro dialog as shown (if it was an intro)
+									self.intro_dialog_shown = True
 								# Notify join player that dialogue ended
 								if self.network and self.network.is_connected() and self.player_role == 'shion':
 									dialog_state = {
@@ -488,6 +616,8 @@ class Game:
 									else:
 										# Normal dialog end: return to gameplay
 										self.state = GameConfig.STATE_PLAYING
+										# Mark intro dialog as shown (if it was an intro)
+										self.intro_dialog_shown = True
 									# Notify join player that dialogue ended
 									if self.network and self.network.is_connected() and self.player_role == 'shion':
 										dialog_state = {
@@ -619,6 +749,8 @@ class Game:
 								else:
 									# Normal dialog end: return to gameplay
 									self.state = GameConfig.STATE_PLAYING
+									# Mark intro dialog as shown (for join player)
+									self.intro_dialog_shown = True
 					else:
 						# Advance dialogue immediately when host presses E
 						triggered_event = self.dialog_system.next_line()
@@ -643,6 +775,8 @@ class Game:
 								else:
 									# Normal dialog end: return to gameplay
 									self.state = GameConfig.STATE_PLAYING
+									# Mark intro dialog as shown (for join player)
+									self.intro_dialog_shown = True
 
 				# --- During gameplay: interact with objects ---
 				elif self.state == GameConfig.STATE_PLAYING:
@@ -844,13 +978,32 @@ class Game:
 				self.fade_alpha = 0
 				# Fade-in complete
 				if self.state == GameConfig.STATE_FADING_IN:
-					self.state = GameConfig.STATE_PLAYING
 					self.teleport_target_map = None
-					# After entering PLAYING, start pending intro if any (HOST ONLY)
+					
+					# CRITICAL: Verify player is fully spawned before starting intro dialog
+					# This ensures player exists, is positioned, and ready before any dialog
+					if self.player_go and self.player_transform:
+						try:
+							self._verify_player_spawned()
+							print(f"[GAME] Player verified before intro dialog - position: ({self.player_transform.rect.centerx}, {self.player_transform.rect.centery})")
+						except Exception as e:
+							print(f"[GAME] ERROR: Player verification failed: {e}")
+							# Don't start dialog if player isn't ready
+							print(f"[GAME] Skipping intro dialog until player is ready")
+							# Enter playing state without dialog as fallback
+							self.state = GameConfig.STATE_PLAYING
+							self.intro_dialog_shown = True
+							return
+					
+					# After fade-in and player verification, start pending intro if any (HOST ONLY)
+					# IMPORTANT: Start intro dialog BEFORE entering PLAYING state
+					# This prevents track checking from triggering during dialog
 					if self.player_role == 'shion' and self.pending_intro_script:
+						print(f"[GAME] Starting intro dialog '{self.pending_intro_script}' - player is ready")
 						self.dialog_system.start_conversation(self.pending_intro_script)
 						if self.dialog_system.is_active:
 							self.state = GameConfig.STATE_DIALOGUE
+							self.intro_dialog_shown = False  # Will be set to True when dialog ends
 							# Mark flag so it only plays once per map
 							try:
 								current_map = self.scene.map_path if self.scene else None
@@ -861,6 +1014,10 @@ class Game:
 								pass
 						# Clear pending
 						self.pending_intro_script = None
+					else:
+						# No intro dialog - safe to enter playing state
+						self.state = GameConfig.STATE_PLAYING
+						self.intro_dialog_shown = True
 
 		# ===== UPDATE DIALOGUE SYSTEM =====
 		# Typewriter effect needs to run even during dialogue state
@@ -917,6 +1074,8 @@ class Game:
 								self.dialog_system.is_active = False
 								if self.state == GameConfig.STATE_DIALOGUE:
 									self.state = GameConfig.STATE_PLAYING
+									# Mark intro dialog as shown (for join player, synced from host)
+									self.intro_dialog_shown = True
 					
 					# Check if script_id changed (e.g., from goto_script in choice)
 					# Do this AFTER checking active state to ensure dialogue is active
@@ -976,14 +1135,38 @@ class Game:
 						dir_val
 					)
 				# Join player doesn't send position - they use host's position
+				# CRITICAL: Only sync position if scene is fully ready and intro dialog shown
 				elif self.player_role == 'shione':
-					# Follow host's latest position so local collisions/teleports match
-					try:
-						hx = int(self.other_player_pos.get('x', self.player_transform.rect.centerx))
-						hy = int(self.other_player_pos.get('y', self.player_transform.rect.centery))
-						self.player_transform.rect.centerx = hx
-						self.player_transform.rect.centery = hy
-					except Exception:
+					# Only sync position if scene is ready and intro dialog has been shown
+					# This prevents overriding spawn position before scene is fully loaded
+					if (self.scene and self.scene.is_fully_loaded and 
+						getattr(self, 'intro_dialog_shown', False)):
+						# Follow host's latest position so local collisions/teleports match
+						try:
+							hx = int(self.other_player_pos.get('x', self.player_transform.rect.centerx))
+							hy = int(self.other_player_pos.get('y', self.player_transform.rect.centery))
+							
+							# CRITICAL: Verify host position is valid before applying
+							# If host hasn't loaded scene yet, position might be (0,0) or invalid
+							if hx != 0 or hy != 0:  # Avoid using (0,0) which might be uninitialized
+								# Only update if we have a valid spawn position to compare
+								if hasattr(self, 'last_spawn_position'):
+									spawn_x, spawn_y = self.last_spawn_position
+									# If host position is very different from spawn, wait for valid position
+									if abs(hx - spawn_x) < 5000 and abs(hy - spawn_y) < 5000:
+										self.player_transform.rect.centerx = hx
+										self.player_transform.rect.centery = hy
+								else:
+									# No spawn position stored, use host position directly
+									self.player_transform.rect.centerx = hx
+									self.player_transform.rect.centery = hy
+						except Exception as e:
+							print(f"[GAME] Error syncing join player position: {e}")
+							# Don't update position on error
+							pass
+					else:
+						# Scene not ready or intro not shown - keep spawn position
+						# Don't sync from host yet
 						pass
 			
 			# Update camera to follow player
@@ -999,22 +1182,28 @@ class Game:
 			
 			# ===== TRACK SYSTEM (Yellow Room) =====
 			# Check if player is on track (only for yellow room)
-			if self.scene and self.scene.map_path and "yellow" in self.scene.map_path.lower():
-				if self.scene.track_polygons:
-					player_x = self.player_transform.rect.centerx
-					player_y = self.player_transform.rect.centery
-					
-					# Check if player is inside any track polygon
-					is_on_track = False
-					for polygon in self.scene.track_polygons:
-						if self._point_in_polygon(player_x, player_y, polygon):
-							is_on_track = True
-							break
-					
-					# If player is not on track, trigger exit game
-					if not is_on_track:
-						print("[GAME] Player left the track! Triggering exit game...")
-						self.handle_dialogue_event("exit_game")
+			# CRITICAL: Only check track if:
+			# 1. Scene is fully loaded
+			# 2. Intro dialog has been shown (prevents false triggers during spawn)
+			# 3. Track polygons exist
+			if (self.scene and self.scene.is_fully_loaded and 
+				self.scene.map_path and "yellow" in self.scene.map_path.lower() and
+				getattr(self, 'intro_dialog_shown', True) and  # Default True for rooms without intro
+				self.scene.track_polygons):
+				player_x = self.player_transform.rect.centerx
+				player_y = self.player_transform.rect.centery
+				
+				# Check if player is inside any track polygon
+				is_on_track = False
+				for polygon in self.scene.track_polygons:
+					if self._point_in_polygon(player_x, player_y, polygon):
+						is_on_track = True
+						break
+				
+				# If player is not on track, trigger exit game
+				if not is_on_track:
+					print("[GAME] Player left the track! Triggering exit game...")
+					self.handle_dialogue_event("exit_game")
 		
 		# ===== STATE: END_SCREEN (End credits sequence) =====
 		if self.state == GameConfig.STATE_END_SCREEN:

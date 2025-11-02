@@ -603,8 +603,14 @@ class Scene:
 		# Track polygons (for yellow room track system)
 		self.track_polygons: List[List[tuple]] = []
 		
+		# Scene loading state - track when scene is fully ready
+		self.is_fully_loaded = False
+		
 		# Create all objects from the map file
 		self._create_objects_from_map()
+		
+		# Verify scene is fully loaded
+		self._verify_loading_complete()
 	
 	def add_game_object(self, game_object: GameObject):
 		"""Add a new object to this scene."""
@@ -846,15 +852,109 @@ class Scene:
 			expanded.append((new_x, new_y))
 		
 		return expanded
+	
+	def _verify_loading_complete(self) -> None:
+		"""
+		Verify that the scene is fully loaded and ready for gameplay.
+		This ensures all critical systems (like track polygons) are loaded.
+		"""
+		# Verify map data exists
+		if not self.tmx_data:
+			raise RuntimeError(f"Failed to load map data for {self.map_path}")
+		
+		# Verify map surface exists
+		if not self.map_surface:
+			raise RuntimeError(f"Failed to render map surface for {self.map_path}")
+		
+		# For yellow room, verify track polygons are loaded
+		if "yellow" in self.map_path.lower():
+			if not self.track_polygons:
+				print(f"Warning: Yellow room {self.map_path} has no track polygons loaded!")
+			else:
+				print(f"[SCENE] Yellow room track system loaded: {len(self.track_polygons)} track polygons")
+		
+		# Mark scene as fully loaded
+		self.is_fully_loaded = True
+		print(f"[SCENE] Scene fully loaded and verified: {self.map_path}")
+	
+	def is_spawn_on_track(self, spawn_x: float, spawn_y: float) -> bool:
+		"""
+		Check if a spawn point is on a valid track (for yellow room).
+		Returns True if on track or if map doesn't require tracks.
+		"""
+		# Only check tracks for yellow room
+		if "yellow" not in self.map_path.lower():
+			return True  # Other rooms don't require track checking
+		
+		# If no track polygons, warn but allow spawn (shouldn't happen if map is correct)
+		if not self.track_polygons:
+			print(f"Warning: Yellow room has no track polygons! Spawn may be invalid.")
+			return True  # Allow spawn to prevent breaking game
+		
+		# Check if spawn point is inside any track polygon
+		for polygon in self.track_polygons:
+			if self._point_in_polygon(spawn_x, spawn_y, polygon):
+				return True
+		
+		return False
+	
+	def _point_in_polygon(self, x: float, y: float, polygon: List[tuple]) -> bool:
+		"""
+		Check if a point (x, y) is inside a polygon using ray casting algorithm.
+		Returns True if point is inside the polygon, False otherwise.
+		"""
+		n = len(polygon)
+		inside = False
+		
+		if n < 3:
+			return False  # Not a valid polygon
+		
+		p1x, p1y = polygon[0]
+		for i in range(1, n + 1):
+			p2x, p2y = polygon[i % n]
+			if y > min(p1y, p2y):
+				if y <= max(p1y, p2y):
+					if x <= max(p1x, p2x):
+						if p1y != p2y:
+							xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+						else:
+							xinters = p1x
+						if p1x == p2x or x <= xinters:
+							inside = not inside
+			p1x, p1y = p2x, p2y
+		
+		return inside
 
 	def create_player(self, x: int, y: int) -> GameObject:
-		"""Factory method to create the player GameObject at a specific position."""
+		"""
+		Factory method to create the player GameObject at a specific position.
+		x, y should be the CENTER position where the player should spawn.
+		Transform uses top-left, so we convert center to top-left.
+		"""
 		player_go = GameObject(self, name="Player")
+		# Convert center position (x, y) to top-left for Transform
+		# Transform expects top-left corner, but spawn points are center positions
+		hitbox_size = GameConfig.PLAYER_HITBOX_SIZE
+		top_left_x = x - (hitbox_size // 2)
+		top_left_y = y - (hitbox_size // 2)
+		
 		player_go.add_component(Transform(
-			x, y,
-			GameConfig.PLAYER_HITBOX_SIZE,
-			GameConfig.PLAYER_HITBOX_SIZE
+			top_left_x, top_left_y,
+			hitbox_size,
+			hitbox_size
 		))
+		# Verify the center matches the spawn point
+		transform = player_go.get_component(Transform)
+		if transform and transform.rect:
+			actual_center_x = transform.rect.centerx
+			actual_center_y = transform.rect.centery
+			# Allow small floating point differences
+			if abs(actual_center_x - x) > 1 or abs(actual_center_y - y) > 1:
+				print(f"[SCENE] WARNING: Player center mismatch! Expected ({x}, {y}), got ({actual_center_x}, {actual_center_y})")
+				# Force correct center position
+				transform.rect.centerx = x
+				transform.rect.centery = y
+		
 		player_go.add_component(BoxCollider(is_solid=False))  # Player is a trigger
 		player_go.add_component(PlayerController())
 		self.add_game_object(player_go)
